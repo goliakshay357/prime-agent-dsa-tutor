@@ -1,3 +1,4 @@
 node_modules/
 *.html
+!skills/dsa-visual-teacher/templates/*.html
 .DS_Store

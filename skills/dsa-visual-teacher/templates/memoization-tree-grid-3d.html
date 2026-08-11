@@ -1,0 +1,642 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>LCS Memoization — Step Debugger</title>
+<style>
+:root{
+  --bg:#080c12;--surface:#111820;--surface2:#1a2430;--text:#dde4ec;--muted:#6b7d90;
+  --accent:#7c9af2;--gold:#ffd54f;--green:#69f0ae;--red:#ff5252;
+  --font:system-ui,-apple-system,'Segoe UI',sans-serif;--mono:'SF Mono','Cascadia Code','Fira Code',monospace;
+}
+@media(prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){--bg:#eef1f5;--surface:#fff;--surface2:#e2e6ec;--text:#1a2028;--muted:#5e6b7c;}
+}
+:root[data-theme="dark"]{--bg:#080c12;--surface:#111820;--surface2:#1a2430;--text:#dde4ec;--muted:#6b7d90;}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);font-family:var(--font);color:var(--text);-webkit-tap-highlight-color:transparent}
+#app{display:flex;height:100%}
+
+#gl{flex:1;position:relative;min-width:0;touch-action:none}
+#gl canvas{display:block;touch-action:none}
+#gl-hint{position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--muted);background:var(--surface);padding:3px 10px;border-radius:10px;pointer-events:none;opacity:.7;z-index:2}
+
+#side{width:380px;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--surface2);z-index:5;overflow:hidden;touch-action:pan-y}
+#code-panel{overflow-y:auto;padding:6px 10px;font-family:var(--mono);font-size:11px;line-height:1.75;max-height:175px;border-bottom:1px solid var(--surface2)}
+#code-panel .ln{display:flex;padding:0 6px;border-radius:3px;transition:background .15s}
+#code-panel .ln .n{color:var(--muted);width:22px;text-align:right;margin-right:8px;flex-shrink:0;user-select:none}
+#code-panel .ln .c{white-space:pre;flex:1}
+#code-panel .ln.hi{background:var(--accent);color:#fff;box-shadow:0 0 10px #7c9af244}
+#code-panel .ln.hi .n{color:#fffc}
+
+#info{padding:10px 12px;border-top:1px solid var(--surface2);min-height:48px;font-size:13px;line-height:1.4}
+#info .desc{color:var(--text)}
+#info .meta{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px}
+
+#ctrls{display:flex;gap:5px;padding:8px 10px;border-top:1px solid var(--surface2);align-items:center;flex-wrap:wrap}
+button,select{font-family:var(--font);font-size:12px;font-weight:600;padding:7px 12px;border-radius:7px;border:none;cursor:pointer;background:var(--surface2);color:var(--text);min-height:38px;white-space:nowrap;transition:background .15s,transform .1s}
+button:active{transform:scale(.96)}
+button.pri{background:var(--accent);color:#fff;font-size:14px;padding:8px 16px}
+button:disabled{opacity:.3;pointer-events:none}
+#step-num{font-size:11px;color:var(--muted);font-family:var(--mono);min-width:55px;text-align:center}
+#speed-v{width:50px;accent-color:var(--accent)}
+
+@media(max-width:700px){
+  #app{flex-direction:column}
+  #gl{height:48vh}
+  #side{width:100%;height:52vh;border-left:none;border-top:1px solid var(--surface2)}
+  #code-panel{max-height:130px;font-size:10px}
+  button{font-size:10px;padding:5px 8px;min-height:32px}
+  button.pri{font-size:12px;padding:6px 12px}
+}
+</style>
+
+<div id="app">
+  <div id="gl"><div id="gl-hint">👆 orbit · 🤏 zoom · 👆👆 pan &nbsp;|&nbsp; 📝 memo board ↓ below tree</div></div>
+  <div id="side">
+    <div id="code-panel"></div>
+    <div id="info"><div class="desc">Ready. Press <b>▶ Next</b> to step through the memoized recursion.</div><div class="meta"></div></div>
+    <div id="ctrls">
+      <button id="b-prev">◀</button>
+      <span id="step-num">—/—</span>
+      <button id="b-next" class="pri">▶ Next</button>
+      <button id="b-auto">⏩ Auto</button>
+      <button id="b-reset">↺</button>
+      <select id="ex-sel">
+        <option value="0">abc × ac</option>
+        <option value="1">abcde × ace</option>
+        <option value="2">abc × def</option>
+        <option value="3">abc × abc</option>
+        <option value="4">abcdef × acef</option>
+        <option value="5">abcabc × abc</option>
+      </select>
+      <label style="font-size:10px;color:var(--muted);display:flex;align-items:center;gap:2px">⏱<input id="speed-v" type="range" min="1" max="5" value="3"></label>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ═══════════ EXAMPLES ═══════════
+const EXS=[{t1:'abc',t2:'ac'},{t1:'abcde',t2:'ace'},{t1:'abc',t2:'def'},{t1:'abc',t2:'abc'},{t1:'abcdef',t2:'acef'},{t1:'abcabc',t2:'abc'}];
+let exI=0,t1=EXS[0].t1,t2=EXS[0].t2;
+
+// ═══════════ PSEUDO CODE ═══════════
+const CODE=[
+  'memo = {}',
+  '',
+  'def LCS(s1, s2):',
+  '    if (s1,s2) in memo:',
+  '        return memo[(s1,s2)]   ← HIT',
+  '',
+  '    if s1=="" or s2=="":',
+  '        return 0',
+  '',
+  '    if s1[-1] == s2[-1]:',
+  '        res = 1 + LCS(s1[:-1], s2[:-1])',
+  '    else:',
+  '        res = max(LCS(s1[:-1], s2),',
+  '                   LCS(s1, s2[:-1]))',
+  '',
+  '    memo[(s1,s2)] = res       ← STORE',
+  '    return res',
+];
+
+// ═══════════ MEMOIZED TREE ═══════════
+let nodeId=0,memoState={},hitCount=0;
+class Node{constructor(s1,s2,p){this.id=nodeId++;this.s1=s1;this.s2=s2;this.key=s1+'|'+s2;this.parent=p;this.children=[];this.value=null;this.type='';this.isHit=false;this.onPath=false;this.last1=s1.length?s1[s1.length-1]:'';this.last2=s2.length?s2[s2.length-1]:'';}}
+
+function buildMemoTree(s1,s2,parent=null){
+  const key=s1+'|'+s2;
+  if(memoState[key]!==undefined){
+    const n=new Node(s1,s2,parent);n.type='hit';n.value=memoState[key];n.isHit=true;hitCount++;
+    return n;
+  }
+  const n=new Node(s1,s2,parent);
+  if(s1.length===0||s2.length===0){n.type='base';n.value=0;memoState[key]=0;return n;}
+  if(s1[s1.length-1]===s2[s2.length-1]){
+    n.type='match';const c=buildMemoTree(s1.slice(0,-1),s2.slice(0,-1),n);n.children.push(c);n.value=1+c.value;n.onPath=true;c.onPath=true;
+  }else{
+    n.type='branch';const c1=buildMemoTree(s1.slice(0,-1),s2,n);const c2=buildMemoTree(s1,s2.slice(0,-1),n);n.children.push(c1,c2);n.value=Math.max(c1.value,c2.value);
+    if(c1.value>=c2.value){c1.onPath=true;if(c1.value===c2.value)c2.onPath=true;}else c2.onPath=true;
+  }
+  memoState[key]=n.value;
+  return n;
+}
+
+function allNodes(r){const a=[];(function d(n){a.push(n);n.children.forEach(d);})(r);return a;}
+function findNode(r,id){if(r.id===id)return r;for(const c of r.children){const f=findNode(c,id);if(f)return f;}return null;}
+
+// ═══════════ TRACE ═══════════
+function genTrace(root){
+  const T=[];
+  function go(n){
+    T.push({line:2, nid:n.id, action:'enter', desc:'Enter LCS("'+(n.s1||'ε')+'","'+(n.s2||'ε')+'")'});
+    T.push({line:3, nid:n.id, action:'lookup', desc:'Check memo[("'+(n.s1||'ε')+'","'+(n.s2||'ε')+'")]...'});
+
+    if(n.isHit){
+      T.push({line:4, nid:n.id, action:'hit', val:n.value, desc:'🟡 MEMO HIT! Value '+n.value+' already stored → return immediately. NO recursion needed.'});
+      T.push({line:4, nid:n.id, action:'return_val', val:n.value, desc:'Return '+n.value+' (from memo)'});
+      return;
+    }
+    T.push({line:3, nid:n.id, action:'miss', desc:'🔴 MEMO MISS — not in memo. Must compute.'});
+
+    if(n.type==='base'){
+      T.push({line:6, nid:n.id, action:'base', desc:'Base case! Empty string → return 0'});
+      T.push({line:15, nid:n.id, action:'store', val:0, desc:'Store: memo[("'+(n.s1||'ε')+'","'+(n.s2||'ε')+'")] = 0'});
+      T.push({line:16, nid:n.id, action:'return_val', val:0, desc:'Return 0'});
+      return;
+    }
+
+    T.push({line:9, nid:n.id, action:'compare', desc:'Compare: s1[-1]=\''+n.last1+'\' vs s2[-1]=\''+n.last2+'\''});
+
+    if(n.type==='match'){
+      T.push({line:10, nid:n.id, action:'recurse', desc:'MATCH! \''+n.last1+'\'==\''+n.last2+'\' → 1 + LCS("'+(n.s1.slice(0,-1)||'ε')+'","'+(n.s2.slice(0,-1)||'ε')+'")'});
+      go(n.children[0]);
+      T.push({line:15, nid:n.id, action:'store', val:n.value, desc:'Store: memo[("'+(n.s1||'ε')+'","'+(n.s2||'ε')+'")] = 1 + '+n.children[0].value+' = '+n.value});
+      T.push({line:16, nid:n.id, action:'return_val', val:n.value, desc:'◀ Return '+n.value});
+    }else{
+      T.push({line:12, nid:n.id, action:'branch', desc:'MISMATCH! \''+n.last1+'\'≠\''+n.last2+'\' → must try both options'});
+      T.push({line:12, nid:n.id, action:'recurse', desc:'Option 1: skip s1[-1] → LCS("'+(n.s1.slice(0,-1)||'ε')+'","'+(n.s2||'ε')+'")'});
+      go(n.children[0]);
+      T.push({line:13, nid:n.id, action:'recurse', desc:'Option 2: skip s2[-1] → LCS("'+(n.s1||'ε')+'","'+(n.s2.slice(0,-1)||'ε')+'")'});
+      go(n.children[1]);
+      const cv1=n.children[0].value,cv2=n.children[1].value;
+      T.push({line:15, nid:n.id, action:'store', val:n.value, desc:'Store: memo[("'+(n.s1||'ε')+'","'+(n.s2||'ε')+'")] = max('+cv1+','+cv2+') = '+n.value});
+      T.push({line:16, nid:n.id, action:'return_val', val:n.value, desc:'◀ Return '+n.value});
+    }
+  }
+  go(root);
+  T.push({line:-1, nid:null, action:'done', desc:'🏁 Done. Answer = '+root.value+'. Memo saved '+(hitCount)+' recomputation'+(hitCount!==1?'s':'')+'.'});
+  return T;
+}
+
+// ═══════════ THREE.JS ═══════════
+const glWrap=document.getElementById('gl');
+const rend=new THREE.WebGLRenderer({antialias:true,alpha:true});
+rend.setPixelRatio(Math.min(devicePixelRatio,2));rend.shadowMap.enabled=true;
+rend.toneMapping=THREE.ACESFilmicToneMapping;rend.toneMappingExposure=1.1;
+glWrap.appendChild(rend.domElement);
+
+const scene=new THREE.Scene();scene.background=new THREE.Color('#080c12');
+const cam=new THREE.PerspectiveCamera(40,2,.5,50);cam.position.set(4,6,9);cam.lookAt(0,-2,0);
+const ctrl=new OrbitControls(cam,rend.domElement);
+ctrl.enableDamping=true;ctrl.dampingFactor=.08;ctrl.target.set(0,-2,0);
+ctrl.minDistance=2;ctrl.maxDistance=30;ctrl.maxPolarAngle=Math.PI*.8;
+ctrl.zoomSpeed=10;ctrl.zoomToCursor=true;ctrl.wheelSpeed=3;ctrl.update();
+
+scene.add(new THREE.AmbientLight('#8899bb',2.5));
+const dl=new THREE.DirectionalLight('#fff',3);dl.position.set(5,10,5);scene.add(dl);
+scene.add(new THREE.DirectionalLight('#8899cc',1.2)).position.set(-3,2,-3);
+
+// ═══════════ NODE CARDS ═══════════
+function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();}
+
+function cardTex(n,isOnPath,isActive,showValue){
+  const W=380,H=140;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+  const cx=cv.getContext('2d');
+
+  let bg='#1a2840';
+  if(isActive&&n.isHit)bg='#4d2818';
+  else if(n.isHit)bg='#381c10';
+  else if(isActive)bg='#284878';
+  cx.fillStyle=bg;roundRect(cx,0,0,W,H,12);cx.fill();
+
+  const bc=n.isHit?'#ff5252':n.type==='match'?'#69f0ae':n.type==='branch'?'#7c9af2':'#555';
+  cx.strokeStyle=isOnPath&&!n.isHit?'#ffd54f':bc;
+  cx.lineWidth=isOnPath&&!n.isHit?4:3;
+  if(isActive){cx.shadowColor=isOnPath&&!n.isHit?'#ffd54f':bc;cx.shadowBlur=14;}
+  roundRect(cx,2,2,W-4,H-4,12);cx.stroke();cx.shadowBlur=0;
+
+  cx.fillStyle='#8899aa';cx.font='10px system-ui';cx.fillText('s1:',14,28);
+  cx.font='bold 26px monospace';
+  if(n.s1.length>0){
+    const pre=n.s1.slice(0,-1),last=n.s1.slice(-1);
+    let x=14+cx.measureText('s1: ').width;
+    cx.fillStyle='#dde4ec';cx.fillText(pre,x,56);x+=cx.measureText(pre).width;
+    if(isActive){cx.shadowColor='#ffd54f';cx.shadowBlur=8;}
+    cx.fillStyle='#ffd54f';cx.fillText(last,x,56);cx.shadowBlur=0;
+  }else{cx.fillStyle='#556';cx.font='italic 22px monospace';cx.fillText('(empty)',14+cx.measureText('s1: ').width,56);}
+
+  cx.fillStyle='#8899aa';cx.font='10px system-ui';cx.fillText('s2:',14,86);
+  cx.font='bold 26px monospace';
+  if(n.s2.length>0){
+    const pre=n.s2.slice(0,-1),last=n.s2.slice(-1);
+    let x=14+cx.measureText('s2: ').width;
+    cx.fillStyle='#dde4ec';cx.fillText(pre,x,112);x+=cx.measureText(pre).width;
+    if(isActive){cx.shadowColor='#ff8a65';cx.shadowBlur=8;}
+    cx.fillStyle='#ff8a65';cx.fillText(last,x,112);cx.shadowBlur=0;
+  }else{cx.fillStyle='#556';cx.font='italic 22px monospace';cx.fillText('(empty)',14+cx.measureText('s2: ').width,112);}
+
+  const tag=n.isHit?'MEMO HIT':n.type==='match'?'MATCH':n.type==='branch'?'BRANCH':'BASE';
+  const tc=n.isHit?'#ff5252':n.type==='match'?'#69f0ae':n.type==='branch'?'#7c9af2':'#666';
+  cx.fillStyle=tc;cx.font='bold 10px system-ui';const tw=cx.measureText(tag).width;
+  cx.fillText(tag,W-tw-14,24);
+
+  if(showValue&&n.value!==null){
+    const vw=36,vh=28,vx=W-vw-12,vy=H-vh-10;
+    cx.fillStyle='#0008';roundRect(cx,vx,vy,vw,vh,8);cx.fill();
+    cx.fillStyle=n.isHit?'#ff8a65':'#ffd54f';cx.font='bold 20px monospace';cx.textAlign='center';
+    cx.fillText(n.value,vx+vw/2,vy+vh/2+7);cx.textAlign='start';
+  }
+
+  return new THREE.CanvasTexture(cv);
+}
+
+// ═══════════ TREE LAYOUT ═══════════
+const TREE_SCALE=2.6,CARD_W=2.4,CARD_H=.88;
+function layoutTree(root){
+  let leafX=0;
+  function dfs(n,depth){
+    n.depth=depth;
+    if(n.children.length===0){n._x=leafX;n._y=-depth*.7;leafX++;return;}
+    for(const c of n.children)dfs(c,depth+1);
+    n._x=(n.children[0]._x+(n.children[n.children.length-1]._x))/2;
+    n._y=-depth*.7;
+  }
+  dfs(root,0);
+  const all=allNodes(root);
+  const cx=all.reduce((s,n)=>s+n._x,0)/all.length;
+  all.forEach(n=>n._x-=cx);
+}
+
+function getTreeBounds(root){
+  const all=allNodes(root);
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  all.forEach(n=>{
+    const x=n._x*TREE_SCALE,y=n._y*TREE_SCALE;
+    if(x<minX)minX=x;if(x>maxX)maxX=x;
+    if(y<minY)minY=y;if(y>maxY)maxY=y;
+  });
+  return {minX,maxX,minY,maxY};
+}
+
+// ═══════════ EDGES ═══════════
+function makeEdge(from,to,onPath){
+  const sv=new THREE.Vector3(from._x*TREE_SCALE,from._y*TREE_SCALE,0);
+  const ev=new THREE.Vector3(to._x*TREE_SCALE,to._y*TREE_SCALE,0);
+  const dir=new THREE.Vector3().subVectors(ev,sv);const len=dir.length();
+  const mid=new THREE.Vector3().addVectors(sv,ev).multiplyScalar(.5);
+  const geo=new THREE.CylinderGeometry(.03,.03,len,6,1);
+  const col=onPath?'#ffd54f':'#3a4a5a';
+  const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:.5,roughness:.3});
+  const m=new THREE.Mesh(geo,mat);m.position.copy(mid);
+  m.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize()));
+  m.visible=false;scene.add(m);return m;
+}
+
+// ═══════════ SCENE BUILD ═══════════
+let nodeMeshes=new Map(),edgeMeshes=[],treeNodeRoot=null;
+
+function clear3D(){
+  nodeMeshes.forEach(g=>{g.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material){if(c.material.map)c.material.map.dispose();c.material.dispose();}});scene.remove(g);});
+  nodeMeshes.clear();
+  edgeMeshes.forEach(e=>{e.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material)c.material.dispose();});scene.remove(e);});
+  edgeMeshes=[];
+  if(memoBoardMesh){memoBoardMesh.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material){if(c.material.map)c.material.map.dispose();c.material.dispose();}});scene.remove(memoBoardMesh);memoBoardMesh=null;}
+}
+
+function buildScene(root){
+  clear3D();
+  const all=allNodes(root);
+  all.forEach(n=>{
+    const g=new THREE.Group();
+    const tex=cardTex(n,n.onPath,false,false);
+    const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true,side:THREE.DoubleSide,depthTest:true});
+    const card=new THREE.Mesh(new THREE.PlaneGeometry(CARD_W,CARD_H),mat);card.name='card';
+    g.add(card);
+    g.position.set(n._x*TREE_SCALE,n._y*TREE_SCALE,.1);
+    g.visible=false;g.userData={nodeId:n.id};
+    scene.add(g);nodeMeshes.set(n.id,g);
+  });
+  all.forEach(n=>{n.children.forEach(c=>{edgeMeshes.push(makeEdge(n,c,n.onPath&&c.onPath));});});
+}
+
+// ═══════════ 3D MEMO BOARD ═══════════
+let memoBoardMesh=null,memoBoardCanvas=null,memoBoardCtx=null;
+let memoGridState=[],memoS1='',memoS2='';
+
+function createMemoBoard(s1,s2){
+  memoS1=s1;memoS2=s2;
+  const n=s1.length,m=s2.length;
+
+  // init state grid
+  memoGridState=[];
+  for(let i=0;i<=n;i++){
+    memoGridState[i]=[];
+    for(let j=0;j<=m;j++){
+      memoGridState[i][j]={state:(i===0||j===0)?'base':'empty',value:(i===0||j===0)?0:null};
+    }
+  }
+
+  // canvas
+  const CELL=44,PAD=8,HDR=32;
+  const cw=(m+2)*CELL+PAD*2,ch=(n+2)*CELL+PAD*2+HDR;
+  memoBoardCanvas=document.createElement('canvas');
+  memoBoardCanvas.width=cw;memoBoardCanvas.height=ch;
+  memoBoardCtx=memoBoardCanvas.getContext('2d');
+
+  drawMemoBoard();
+
+  const tex=new THREE.CanvasTexture(memoBoardCanvas);tex.minFilter=THREE.LinearFilter;tex.magFilter=THREE.LinearFilter;
+
+  // 3D plane — keep aspect ratio, cap width at ~5 units
+  const planeW=Math.min(5.5,cw/90);
+  const planeH=planeW*(ch/cw);
+  const geo=new THREE.PlaneGeometry(planeW,planeH);
+  const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true,side:THREE.DoubleSide,depthTest:true,depthWrite:true});
+
+  if(memoBoardMesh){memoBoardMesh.geometry.dispose();memoBoardMesh.material.map.dispose();memoBoardMesh.material.dispose();scene.remove(memoBoardMesh);}
+
+  memoBoardMesh=new THREE.Mesh(geo,mat);
+  memoBoardMesh.name='memoBoard';
+  memoBoardMesh.renderOrder=1;
+  memoBoardMesh.material.depthTest=true;
+
+  scene.add(memoBoardMesh);
+  positionMemoBoard();
+}
+
+function positionMemoBoard(){
+  if(!treeNodeRoot||!memoBoardMesh)return;
+  const b=getTreeBounds(treeNodeRoot);
+  const planeH=memoBoardMesh.geometry.parameters.height;
+  // place below the tree, centered on x
+  memoBoardMesh.position.set(0, b.minY - planeH/2 - 1.2, 0);
+}
+
+function drawMemoBoard(){
+  const ctx=memoBoardCtx;if(!ctx)return;
+  const n=memoS1.length,m=memoS2.length;
+  const CELL=44,PAD=8,HDR=32;
+  const cw=(m+2)*CELL+PAD*2,ch=(n+2)*CELL+PAD*2+HDR;
+
+  // bg
+  ctx.fillStyle='#0d1520';ctx.fillRect(0,0,cw,ch);
+
+  // title
+  ctx.fillStyle='#8899aa';ctx.font='bold 13px system-ui';
+  ctx.fillText('📝 Memo Table — rows: s1 prefixes, cols: s2 prefixes',PAD,HDR-10);
+
+  // draw grid cells
+  for(let i=0;i<=n;i++){
+    for(let j=0;j<=m;j++){
+      const cx=PAD+(j+1)*CELL,cy=HDR+PAD+(i+1)*CELL;
+      const st=memoGridState[i]&&memoGridState[i][j]?memoGridState[i][j]:{state:'empty',value:null};
+
+      // cell bg
+      if(st.state==='empty')ctx.fillStyle='#1a2430';
+      else if(st.state==='base')ctx.fillStyle='#141e28';
+      else if(st.state==='hit'){ctx.fillStyle='#4a2010';ctx.shadowColor='#ff525244';ctx.shadowBlur=8;}
+      else if(st.state==='stored')ctx.fillStyle='#1e3a60';
+      ctx.fillRect(cx,cy,CELL-2,CELL-2);
+      ctx.shadowBlur=0;
+
+      // border
+      if(st.state==='hit'){ctx.strokeStyle='#ff5252';ctx.lineWidth=2;}
+      else if(st.state==='stored'){ctx.strokeStyle='#3a6aaa';ctx.lineWidth=1.5;}
+      else{ctx.strokeStyle='#222c38';ctx.lineWidth=1;}
+      ctx.strokeRect(cx+.5,cy+.5,CELL-3,CELL-3);
+
+      // value
+      const val=st.value!==null?String(st.value):'·';
+      if(st.state==='hit')ctx.fillStyle='#ff8a65';
+      else if(st.state==='stored')ctx.fillStyle='#bbc';
+      else if(st.state==='base')ctx.fillStyle='#556';
+      else ctx.fillStyle='#444';
+      ctx.font='bold 16px monospace';ctx.textAlign='center';
+      ctx.fillText(val,cx+CELL/2-1,cy+CELL/2+6);
+      ctx.textAlign='start';
+    }
+  }
+
+  // col headers (s2 prefixes)
+  ctx.fillStyle='#6b7d90';ctx.font='11px monospace';ctx.textAlign='center';
+  for(let j=0;j<=m;j++){
+    const x=PAD+(j+1)*CELL+CELL/2-1,y=HDR+PAD+CELL/2+4;
+    ctx.fillText(j===0?'ε':memoS2.slice(0,j),x,y);
+  }
+
+  // row headers (s1 prefixes)
+  ctx.textAlign='right';
+  for(let i=0;i<=n;i++){
+    const x=PAD+CELL-6,y=HDR+PAD+(i+1)*CELL+CELL/2+4;
+    ctx.fillText(i===0?'ε':memoS1.slice(0,i),x,y);
+  }
+  ctx.textAlign='start';
+
+  // legend
+  const ly=ch-16;
+  ctx.font='10px system-ui';
+  ctx.fillStyle='#1e3a60';ctx.fillRect(PAD,ly-10,12,12);ctx.strokeStyle='#3a6aaa';ctx.strokeRect(PAD,ly-10,12,12);
+  ctx.fillStyle='#8899aa';ctx.fillText('stored',PAD+18,ly);
+  ctx.fillStyle='#4a2010';ctx.fillRect(PAD+70,ly-10,12,12);ctx.strokeStyle='#ff5252';ctx.strokeRect(PAD+70,ly-10,12,12);
+  ctx.fillText('hit',PAD+88,ly);
+  ctx.fillStyle='#1a2430';ctx.fillRect(PAD+120,ly-10,12,12);ctx.strokeStyle='#222c38';ctx.strokeRect(PAD+120,ly-10,12,12);
+  ctx.fillText('not computed',PAD+138,ly);
+}
+
+function updateMemoCell(i,j,state,val){
+  if(i<0||j<0||i>=memoGridState.length||j>=memoGridState[0].length)return;
+  memoGridState[i][j]={state,value:val!==undefined?val:null};
+  if(memoBoardCtx)drawMemoBoard();
+  if(memoBoardMesh&&memoBoardMesh.material.map){
+    memoBoardMesh.material.map.needsUpdate=true;
+  }
+}
+
+// ═══════════ STATE ═══════════
+let trace=[],traceIdx=0,autoId=null;
+let visitedNodes=new Set(),returnedNodes=new Set(),storedKeys=new Set();
+let activeNodeId=null,memoValues={};
+
+function resetState(){
+  traceIdx=0;visitedNodes.clear();returnedNodes.clear();storedKeys.clear();
+  activeNodeId=null;memoValues={};
+  if(autoId){clearTimeout(autoId);autoId=null;document.getElementById('b-auto').textContent='⏩ Auto';}
+  nodeMeshes.forEach(g=>{g.visible=false;g.scale.set(1,1,1);});
+  edgeMeshes.forEach(e=>{e.visible=false;});
+  createMemoBoard(t1,t2);
+}
+
+function renderStep(idx){
+  if(idx>=trace.length)return;
+  const step=trace[idx];
+  activeNodeId=step.nid;
+
+  if((step.action==='return_val')&&step.nid!==null)returnedNodes.add(step.nid);
+  if(step.action==='store'&&step.nid!==null){
+    const n=findNode(treeNodeRoot,step.nid);
+    if(n){storedKeys.add(n.key);memoValues[n.key]=n.value;updateMemoCell(n.s1.length,n.s2.length,'stored',n.value);}
+  }
+  if(step.action==='hit'&&step.nid!==null){
+    const n=findNode(treeNodeRoot,step.nid);
+    if(n){updateMemoCell(n.s1.length,n.s2.length,'hit',n.value);}
+  }
+
+  if(step.nid!==null&&!visitedNodes.has(step.nid)){
+    visitedNodes.add(step.nid);
+    const g=nodeMeshes.get(step.nid);
+    if(g){g.visible=true;g.scale.set(.01,.01,.01);}
+  }
+
+  if(step.nid!==null){
+    const n=findNode(treeNodeRoot,step.nid);
+    if(n&&n.parent){
+      let ec=0;let found=false;
+      for(const en of allNodes(treeNodeRoot)){
+        for(const c of en.children){
+          if(c.id===n.id&&ec<edgeMeshes.length){edgeMeshes[ec].visible=true;found=true;break;}
+          ec++;
+        }
+        if(found)break;
+      }
+    }
+  }
+
+  nodeMeshes.forEach((g,nid)=>{
+    const n=findNode(treeNodeRoot,nid);
+    if(!n||!visitedNodes.has(nid)){g.visible=false;return;}
+    g.visible=true;
+    const card=g.children[0];
+    if(card){
+      card.material.map.dispose();
+      card.material.map=cardTex(n,n.onPath,nid===activeNodeId,returnedNodes.has(nid));
+      card.material.needsUpdate=true;
+    }
+  });
+
+  let ec2=0;
+  for(const en of allNodes(treeNodeRoot)){
+    for(const c of en.children){
+      if(ec2<edgeMeshes.length&&edgeMeshes[ec2].visible){
+        const op=en.onPath&&c.onPath&&!c.isHit;
+        edgeMeshes[ec2].material.color.set(op?'#ffd54f':'#3a4a5a');
+        edgeMeshes[ec2].material.emissive.set(op?'#ffd54f':'#3a4a5a');
+      }
+      ec2++;
+    }
+  }
+}
+
+// ═══════════ UI ═══════════
+const codePanel=document.getElementById('code-panel');
+const stepDesc=document.querySelector('#info .desc');
+const stepMeta=document.querySelector('#info .meta');
+const stepNum=document.getElementById('step-num');
+
+function buildCodePanel(){
+  codePanel.innerHTML='';
+  CODE.forEach((txt,i)=>{
+    const d=document.createElement('div');d.className='ln';d.id='cl-'+i;
+    const ln=i<2?i:i+1;
+    d.innerHTML='<span class="n">'+(txt.trim()?ln:'')+'</span><span class="c">'+txt+'</span>';
+    codePanel.appendChild(d);
+  });
+}
+buildCodePanel();
+
+function hiLine(ln){
+  document.querySelectorAll('#code-panel .ln').forEach(e=>e.classList.remove('hi'));
+  const el=document.getElementById('cl-'+ln);
+  if(el)el.classList.add('hi');
+}
+
+function updateUI(){
+  if(trace.length===0)return;
+  const s=trace[traceIdx];
+  hiLine(s.line);
+  stepDesc.innerHTML=s.desc;
+  stepMeta.innerHTML='stored: <b style="color:#69f0ae">'+storedKeys.size+'</b> &bull; hits: <b style="color:#ff5252">'+hitCount+'</b> &bull; answer = <b style="color:#ffd54f">'+(treeNodeRoot?treeNodeRoot.value:'?')+'</b>';
+  stepNum.textContent=(traceIdx+1)+'/'+trace.length;
+  document.getElementById('b-next').disabled=traceIdx>=trace.length-1;
+  document.getElementById('b-prev').disabled=traceIdx<=0;
+}
+
+function goNext(){if(traceIdx<trace.length-1){traceIdx++;renderStep(traceIdx);updateUI();}}
+function goPrev(){if(traceIdx>0){traceIdx--;renderStep(traceIdx);updateUI();}}
+
+function startAuto(){
+  if(autoId)return;
+  const delays=[700,400,220,120,60];const d=delays[Math.min(4,Math.max(0,(document.getElementById('speed-v').value||3)-1))];
+  document.getElementById('b-auto').textContent='⏸ Pause';
+  function tick(){if(traceIdx>=trace.length-1){stopAuto();return;}goNext();autoId=setTimeout(tick,d);}
+  autoId=setTimeout(tick,d);
+}
+function stopAuto(){if(autoId){clearTimeout(autoId);autoId=null;}document.getElementById('b-auto').textContent='⏩ Auto';}
+
+function fullReset(){
+  stopAuto();
+  memoState={};hitCount=0;nodeId=0;
+  treeNodeRoot=buildMemoTree(t1,t2);
+  layoutTree(treeNodeRoot);
+  buildScene(treeNodeRoot);
+  createMemoBoard(t1,t2);
+  trace=genTrace(treeNodeRoot);
+  resetState();
+  traceIdx=0;renderStep(0);updateUI();
+  // target midway between tree root and memo board
+  const b=getTreeBounds(treeNodeRoot);
+  const midY=(0+b.minY-1.2-(memoBoardMesh?memoBoardMesh.geometry.parameters.height/2:0))/2;
+  ctrl.target.set(0,midY,0);ctrl.update();
+}
+
+function loadEx(i){exI=i;t1=EXS[i].t1;t2=EXS[i].t2;fullReset();}
+
+document.getElementById('b-next').addEventListener('click',goNext);
+document.getElementById('b-prev').addEventListener('click',goPrev);
+document.getElementById('b-reset').addEventListener('click',fullReset);
+document.getElementById('b-auto').addEventListener('click',()=>{if(autoId)stopAuto();else startAuto();});
+document.getElementById('speed-v').addEventListener('input',()=>{if(autoId){stopAuto();startAuto();}});
+document.getElementById('ex-sel').addEventListener('change',e=>loadEx(parseInt(e.target.value)));
+
+window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  if(e.key==='ArrowRight'){e.preventDefault();goNext();}
+  if(e.key==='ArrowLeft'){e.preventDefault();goPrev();}
+  if(e.key===' '){e.preventDefault();if(autoId)stopAuto();else startAuto();}
+  if(e.key==='r'||e.key==='R'){if(!e.metaKey){e.preventDefault();fullReset();}}
+});
+
+function resize(){
+  const w=glWrap.clientWidth,h=glWrap.clientHeight;
+  rend.setSize(w,h);cam.aspect=w/Math.max(h,1);cam.updateProjectionMatrix();
+}
+window.addEventListener('resize',resize);resize();
+
+// ═══════════ ANIMATION ═══════════
+function anim(){
+  requestAnimationFrame(anim);ctrl.update();
+  nodeMeshes.forEach((g,nid)=>{
+    if(!g.visible)return;
+    const tgt=nid===activeNodeId?1.06:1;
+    g.scale.lerp(new THREE.Vector3(tgt,tgt,tgt),.15);
+    const tgtZ=nid===activeNodeId?.25:0;g.position.z+=(tgtZ-g.position.z)*.15;
+    if(nid===activeNodeId){const s=1+.02*Math.sin(performance.now()*.01);g.scale.setScalar(tgt*s);}
+  });
+  rend.render(scene,cam);
+}
+
+// ═══════════ INIT ═══════════
+treeNodeRoot=buildMemoTree(t1,t2);
+layoutTree(treeNodeRoot);
+buildScene(treeNodeRoot);
+createMemoBoard(t1,t2);
+trace=genTrace(treeNodeRoot);
+resetState();renderStep(0);updateUI();
+// target midway between tree root and memo board
+{const b=getTreeBounds(treeNodeRoot);const midY=(0+b.minY-1.2-(memoBoardMesh?memoBoardMesh.geometry.parameters.height/2:0))/2;ctrl.target.set(0,midY,0);ctrl.update();}
+anim();
+
+console.log('🧠 LCS Memoization — 3D Tree + 3D Memo Board');
+console.log('  Nodes:',allNodes(treeNodeRoot).length,'Hits:',hitCount);
+console.log('  Memo board → right of tree in 3D space');
+</script>

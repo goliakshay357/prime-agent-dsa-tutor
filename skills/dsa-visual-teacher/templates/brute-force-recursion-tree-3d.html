@@ -1,0 +1,565 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>LCS Recursion Tree — 3D</title>
+<style>
+:root{
+  --bg:#080c12;--surface:#111820;--surface2:#1a2430;--text:#dde4ec;--muted:#6b7d90;
+  --accent:#7c9af2;--gold:#ffd54f;--green:#69f0ae;--red:#ff5252;--cyan:#4dd0e1;
+  --font:system-ui,-apple-system,'Segoe UI',sans-serif;--mono:'SF Mono','Cascadia Code','Fira Code',monospace;
+}
+@media(prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){--bg:#eef1f5;--surface:#fff;--surface2:#e2e6ec;--text:#1a2028;--muted:#5e6b7c;}
+}
+:root[data-theme="dark"]{--bg:#080c12;--surface:#111820;--surface2:#1a2430;--text:#dde4ec;--muted:#6b7d90;}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);font-family:var(--font);color:var(--text);-webkit-tap-highlight-color:transparent}
+
+#app{display:flex;height:100%}
+#gl{flex:1;position:relative;min-width:0;touch-action:none}
+#gl canvas{display:block;touch-action:none}
+#gl-hint{position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--muted);background:var(--surface);padding:3px 10px;border-radius:10px;pointer-events:none;opacity:.7}
+
+#side{width:370px;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--surface2);z-index:5;overflow:hidden;touch-action:pan-y}
+#code-panel{flex:1;overflow-y:auto;padding:10px;font-family:var(--mono);font-size:12px;line-height:2}
+#code-panel .ln{display:flex;padding:0 6px;border-radius:3px;transition:background .15s}
+#code-panel .ln .n{color:var(--muted);width:24px;text-align:right;margin-right:8px;flex-shrink:0;user-select:none}
+#code-panel .ln .c{white-space:pre;flex:1}
+#code-panel .ln.hi{background:var(--accent);color:#fff;box-shadow:0 0 12px #7c9af244}
+#code-panel .ln.hi .n{color:#fffc}
+#code-panel .ln.dim{opacity:.35}
+
+#info{padding:10px 12px;border-top:1px solid var(--surface2);min-height:48px;font-size:13px;line-height:1.4}
+#info .desc{color:var(--text)}
+#info .meta{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px}
+
+#ctrls{display:flex;gap:5px;padding:8px 10px;border-top:1px solid var(--surface2);align-items:center;flex-wrap:wrap}
+button,select{font-family:var(--font);font-size:12px;font-weight:600;padding:7px 12px;border-radius:7px;border:none;cursor:pointer;background:var(--surface2);color:var(--text);min-height:38px;white-space:nowrap;transition:background .15s,transform .1s}
+button:active{transform:scale(.96)}
+button.pri{background:var(--accent);color:#fff;font-size:14px;padding:8px 16px}
+button:disabled{opacity:.3;pointer-events:none}
+#step-num{font-size:11px;color:var(--muted);font-family:var(--mono);min-width:55px;text-align:center}
+#speed-v{width:50px;accent-color:var(--accent)}
+
+@media(max-width:680px){
+  #app{flex-direction:column}
+  #gl{height:55vh}
+  #side{width:100%;height:45vh;border-left:none;border-top:1px solid var(--surface2)}
+  #code-panel{font-size:10px;line-height:1.8}
+  button{font-size:10px;padding:5px 8px;min-height:32px}
+  button.pri{font-size:12px;padding:6px 12px}
+}
+</style>
+
+<div id="app">
+  <div id="gl"><div id="gl-hint">👆 1-finger orbit &bull; 🤏 pinch zoom &bull; 👆👆 2-finger pan</div></div>
+  <div id="side">
+    <div id="code-panel"></div>
+    <div id="info"><div class="desc"></div><div class="meta"></div></div>
+    <div id="ctrls">
+      <button id="b-prev">◀</button>
+      <span id="step-num">—/—</span>
+      <button id="b-next" class="pri">▶ Next</button>
+      <button id="b-auto">⏩ Auto</button>
+      <button id="b-reset">↺</button>
+      <select id="ex-sel">
+        <option value="0">abc × ac</option>
+        <option value="1">abcde × ace</option>
+        <option value="2">abc × def</option>
+        <option value="3">abc × abc</option>
+        <option value="4">abcdef × acef</option>
+        <option value="5">abcabc × abc</option>
+      </select>
+      <label style="font-size:10px;color:var(--muted);display:flex;align-items:center;gap:2px">⏱<input id="speed-v" type="range" min="1" max="5" value="3"></label>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ═══════════ EXAMPLES ═══════════
+const EXS=[{t1:'abc',t2:'ac'},{t1:'abcde',t2:'ace'},{t1:'abc',t2:'def'},{t1:'abc',t2:'abc'},{t1:'abcdef',t2:'acef'},{t1:'abcabc',t2:'abc'}];
+let exI=0,t1=EXS[0].t1,t2=EXS[0].t2;
+
+// ═══════════ PSEUDO CODE ═══════════
+const CODE=[
+  'function LCS(s1, s2):',
+  '    if s1=="" or s2=="":',
+  '        return 0',
+  '',
+  '    if last(s1) == last(s2):',
+  '        return 1 + LCS(s1[:-1], s2[:-1])',
+  '    else:',
+  '        return max( LCS(s1[:-1], s2),',
+  '                     LCS(s1, s2[:-1]) )',
+];
+
+// ═══════════ RECURSION TREE ═══════════
+let nodeId=0;
+class Node{
+  constructor(s1,s2,parent){
+    this.id=nodeId++; this.s1=s1; this.s2=s2; this.parent=parent;
+    this.children=[]; this.value=null; this.type=''; this.onPath=false;
+    this.last1=s1.length?s1[s1.length-1]:'';
+    this.last2=s2.length?s2[s2.length-1]:'';
+  }
+}
+
+function buildTree(s1,s2,parent=null){
+  const n=new Node(s1,s2,parent);
+  if(s1.length===0||s2.length===0){n.type='base';n.value=0;return n;}
+  if(s1[s1.length-1]===s2[s2.length-1]){
+    n.type='match';
+    const c=buildTree(s1.slice(0,-1),s2.slice(0,-1),n);
+    n.children.push(c); n.value=1+c.value; n.onPath=true; c.onPath=true;
+  }else{
+    n.type='branch';
+    const c1=buildTree(s1.slice(0,-1),s2,n);
+    const c2=buildTree(s1,s2.slice(0,-1),n);
+    n.children.push(c1,c2); n.value=Math.max(c1.value,c2.value);
+    // mark path to best child
+    if(c1.value>=c2.value){c1.onPath=true;if(c1.value===c2.value)c2.onPath=true;}
+    else c2.onPath=true;
+  }
+  return n;
+}
+
+function allNodes(root){const a=[];(function dfs(n){a.push(n);n.children.forEach(dfs);})(root);return a;}
+function dfsOrder(root){const a=[];(function dfs(n){a.push(n);n.children.forEach(dfs);})(root);return a;}
+
+// ═══════════ TRACE GENERATOR ═══════════
+function genTrace(root){
+  const T=[];
+  function go(n){
+    T.push({line:0, nid:n.id, action:'enter', desc:`Enter LCS("${n.s1||'ε'}","${n.s2||'ε'}")`});
+    if(n.type==='base'){
+      T.push({line:1, nid:n.id, action:'check', desc:`Base case! ${n.s1.length===0&&n.s2.length===0?'Both':'One'} string${n.s1.length===0&&n.s2.length===0?'s are':' is'} empty → return 0`});
+      T.push({line:2, nid:n.id, action:'return', desc:`Return 0`});
+      return;
+    }
+    T.push({line:1, nid:n.id, action:'check', desc:`Check: s1="${n.s1||'ε'}" (len=${n.s1.length}), s2="${n.s2||'ε'}" (len=${n.s2.length}) — neither empty → continue`});
+    T.push({line:4, nid:n.id, action:'compare', desc:`Compare last chars: s1[-1]='${n.last1}' vs s2[-1]='${n.last2}'`});
+    if(n.type==='match'){
+      T.push({line:5, nid:n.id, action:'call', desc:`MATCH! '${n.last1}'=='${n.last2}' → call LCS("${n.s1.slice(0,-1)||'ε'}","${n.s2.slice(0,-1)||'ε'}")`});
+      go(n.children[0]);
+      T.push({line:5, nid:n.id, action:'return', desc:`◀ RETURN: 1 + ${n.children[0].value} = ${n.value}. So LCS("${n.s1||'ε'}","${n.s2||'ε'}") = ${n.value}`});
+    }else{
+      T.push({line:4, nid:n.id, action:'branch', desc:`MISMATCH! '${n.last1}'≠'${n.last2}' → must try BOTH options`});
+      T.push({line:7, nid:n.id, action:'call', desc:`Option 1: skip s1[-1] → LCS("${n.s1.slice(0,-1)||'ε'}","${n.s2||'ε'}")`});
+      go(n.children[0]);
+      T.push({line:8, nid:n.id, action:'call', desc:`Option 2: skip s2[-1] → LCS("${n.s1||'ε'}","${n.s2.slice(0,-1)||'ε'}")`});
+      go(n.children[1]);
+      T.push({line:7, nid:n.id, action:'return', desc:`◀ RETURN: max(${n.children[0].value}, ${n.children[1].value}) = ${n.value}. So LCS("${n.s1||'ε'}","${n.s2||'ε'}") = ${n.value}`});
+    }
+  }
+  go(root);
+  T.push({line:-1, nid:null, action:'done', desc:`🏁 DONE. Longest Common Subsequence = ${root.value}`});
+  return T;
+}
+
+// ═══════════ THREE.JS ═══════════
+const glWrap=document.getElementById('gl');
+const rend=new THREE.WebGLRenderer({antialias:true,alpha:true});
+rend.setPixelRatio(Math.min(devicePixelRatio,2));rend.shadowMap.enabled=true;
+rend.toneMapping=THREE.ACESFilmicToneMapping;rend.toneMappingExposure=1.1;
+glWrap.appendChild(rend.domElement);
+
+const scene=new THREE.Scene();scene.background=new THREE.Color('#080c12');
+const cam=new THREE.PerspectiveCamera(45,2,.5,40);cam.position.set(3,5,10);cam.lookAt(0,-2,0);
+const ctrl=new OrbitControls(cam,rend.domElement);
+ctrl.enableDamping=true;ctrl.dampingFactor=.08;ctrl.target.set(0,-2,0);
+ctrl.minDistance=1.5;ctrl.maxDistance=30;ctrl.maxPolarAngle=Math.PI*.8;
+ctrl.zoomSpeed=10;ctrl.zoomToCursor=true;ctrl.wheelSpeed=3;
+ctrl.update();
+
+scene.add(new THREE.AmbientLight('#8899bb',2));
+const dl=new THREE.DirectionalLight('#fff',3);dl.position.set(5,8,5);scene.add(dl);
+scene.add(new THREE.DirectionalLight('#8899cc',1)).position.set(-3,1,-2);
+
+
+// ═══════════ NODE CARD TEXTURE ═══════════
+function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();}
+
+function cardTex(n,isOnPath,isActive,showValue){
+  const W=400,H=150;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;
+  const cx=cv.getContext('2d');
+
+  // bg
+  let bg='#141d28';
+  if(isActive)bg='#1e3050';
+  cx.fillStyle=bg;roundRect(cx,0,0,W,H,14);cx.fill();
+
+  // border
+  const bc=n.type==='match'?'#69f0ae':n.type==='branch'?'#7c9af2':'#555';
+  cx.strokeStyle=isOnPath?'#ffd54f':bc;
+  cx.lineWidth=isOnPath?4:3;
+  if(isActive){cx.shadowColor=isOnPath?'#ffd54f':bc;cx.shadowBlur=16;}
+  roundRect(cx,2,2,W-4,H-4,14);cx.stroke();
+  cx.shadowBlur=0;
+
+  // s1 label
+  cx.fillStyle='#8899aa';cx.font='11px system-ui';
+  cx.fillText('s1:',14,28);
+  cx.font='bold 28px ' + getComputedStyle(document.body).fontFamily.replace('system-ui','monospace');
+  const s1=n.s1||'ε';
+  if(n.s1.length>0){
+    const pre=n.s1.slice(0,-1),last=n.s1.slice(-1);
+    let x=14+cx.measureText('s1: ').width;
+    cx.fillStyle='#dde4ec';cx.fillText(pre,x,58);
+    x+=cx.measureText(pre).width;
+    if(isActive){cx.shadowColor='#ffd54f';cx.shadowBlur=12;}
+    cx.fillStyle='#ffd54f';cx.fillText(last,x,58);
+    cx.shadowBlur=0;
+  }else{
+    cx.fillStyle='#556';cx.font='italic 22px monospace';
+    cx.fillText('(empty)',14+cx.measureText('s1: ').width,58);
+  }
+
+  // s2 label
+  cx.fillStyle='#8899aa';cx.font='11px system-ui';
+  cx.fillText('s2:',14,90);
+  cx.font='bold 28px monospace';
+  if(n.s2.length>0){
+    const pre=n.s2.slice(0,-1),last=n.s2.slice(-1);
+    let x=14+cx.measureText('s2: ').width;
+    cx.fillStyle='#dde4ec';cx.fillText(pre,x,116);
+    x+=cx.measureText(pre).width;
+    if(isActive){cx.shadowColor='#ff8a65';cx.shadowBlur=12;}
+    cx.fillStyle='#ff8a65';cx.fillText(last,x,116);
+    cx.shadowBlur=0;
+  }else{
+    cx.fillStyle='#556';cx.font='italic 22px monospace';
+    cx.fillText('(empty)',14+cx.measureText('s2: ').width,116);
+  }
+
+  // value badge — only shown after return
+  if(showValue && n.value!==null){
+    const vw=38,vh=30,vx=W-vw-12,vy=H-vh-10;
+    cx.fillStyle='#0008';roundRect(cx,vx,vy,vw,vh,8);cx.fill();
+    cx.fillStyle='#ffd54f';cx.font='bold 20px monospace';cx.textAlign='center';
+    cx.fillText(n.value,vx+vw/2,vy+vh/2+7);
+    cx.textAlign='start';
+  }
+
+  // type badge
+  const tag=n.type==='match'?'MATCH':n.type==='branch'?'BRANCH':'BASE';
+  const tc=n.type==='match'?'#69f0ae':n.type==='branch'?'#7c9af2':'#666';
+  cx.fillStyle=tc;cx.font='bold 10px system-ui';
+  const tw=cx.measureText(tag).width;
+  cx.fillText(tag,W-tw-14,24);
+
+  const tex=new THREE.CanvasTexture(cv);tex.minFilter=THREE.LinearFilter;tex.magFilter=THREE.LinearFilter;
+  return tex;
+}
+
+// ═══════════ TREE LAYOUT ═══════════
+function layout(root){
+  let leafX=0;
+  function dfs(n,depth){
+    n.depth=depth;
+    if(n.children.length===0){n._x=leafX;n._y=-depth*.9;leafX++;return;}
+    for(const c of n.children)dfs(c,depth+1);
+    const xs=n.children.map(c=>c._x);
+    n._x=(Math.min(...xs)+Math.max(...xs))/2;
+    n._y=-depth*.9;
+  }
+  dfs(root,0);
+  const all=allNodes(root);
+  const cx=all.length?all.reduce((s,n)=>s+n._x,0)/all.length:0;
+  all.forEach(n=>n._x-=cx);
+}
+
+// ═══════════ SCENE BUILDER ═══════════
+let nodeMeshes=new Map(); // nodeId -> THREE.Group
+let edgeMeshes=[];        // {mesh, fromId, toId}
+let rootNode=null;
+let trace=[];
+
+function clearScene(){
+  nodeMeshes.forEach(g=>{
+    g.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material){if(Array.isArray(c.material))c.material.forEach(m=>m.dispose());else c.material.dispose();}});
+    scene.remove(g);
+  });
+  nodeMeshes.clear();
+  edgeMeshes.forEach(e=>{
+    e.mesh.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material)c.material.dispose();});
+    scene.remove(e.mesh);
+  });
+  edgeMeshes=[];
+}
+
+function makeEdge(from,to,onPath){
+  const sv=new THREE.Vector3(from._x*2.2,from._y*2.2,0);
+  const ev=new THREE.Vector3(to._x*2.2,to._y*2.2,0);
+  const dir=new THREE.Vector3().subVectors(ev,sv);
+  const len=dir.length();
+  const mid=new THREE.Vector3().addVectors(sv,ev).multiplyScalar(.5);
+  const geo=new THREE.CylinderGeometry(.03,.03,len,6,1);
+  const col=onPath?'#ffd54f':'#3a4a5a';
+  const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:.5,roughness:.3});
+  const m=new THREE.Mesh(geo,mat);m.position.copy(mid);
+  const yA=new THREE.Vector3(0,1,0);
+  m.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(yA,dir.normalize()));
+  scene.add(m);
+  return m;
+}
+
+function buildSceneGraph(root){
+  clearScene();
+  const all=allNodes(root);
+  // create node cards
+  all.forEach(n=>{
+    const g=new THREE.Group();
+    const tex=cardTex(n,n.onPath,false,false);
+    const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true,side:THREE.DoubleSide,depthTest:true});
+    const geo=new THREE.PlaneGeometry(2.2,.82);
+    const card=new THREE.Mesh(geo,mat);card.name='card';
+    g.add(card);
+    g.position.set(n._x*2.2,n._y*2.2,0);
+    g.visible=false;
+    g.userData={nodeId:n.id, basePos:g.position.clone()};
+    scene.add(g);
+    nodeMeshes.set(n.id,g);
+  });
+  // create edges
+  all.forEach(n=>{
+    n.children.forEach(c=>{
+      const m=makeEdge(n,c,n.onPath&&c.onPath);
+      m.visible=false;
+      edgeMeshes.push({mesh:m,fromId:n.id,toId:c.id});
+    });
+  });
+}
+
+// ═══════════ STATE MANAGEMENT ═══════════
+let traceIdx=0;
+let autoId=null;
+let visitedNodes=new Set();
+let returnedNodes=new Set();
+let activeNodeId=null;
+let revealedEdges=new Set();
+
+function resetState(){
+  traceIdx=0;visitedNodes.clear();returnedNodes.clear();activeNodeId=null;revealedEdges.clear();
+  nodeMeshes.forEach(g=>{g.visible=false;g.scale.set(1,1,1);});
+  edgeMeshes.forEach(e=>{e.mesh.visible=false;});
+}
+
+function edgeKey(from,to){return `${from}->${to}`;}
+
+function renderStep(idx){
+  if(idx>=trace.length)return;
+  const step=trace[idx];
+  activeNodeId=step.nid;
+
+  // track returns: mark node as returned when we hit a return step
+  if(step.action==='return' && step.nid!==null){
+    returnedNodes.add(step.nid);
+  }
+
+  // reveal current node
+  if(step.nid!==null && !visitedNodes.has(step.nid)){
+    visitedNodes.add(step.nid);
+    const g=nodeMeshes.get(step.nid);
+    if(g){g.visible=true;g.scale.set(.01,.01,.01);}
+  }
+
+  // reveal edge from parent to current
+  if(step.nid!==null){
+    const n=findNode(rootNode,step.nid);
+    if(n&&n.parent){
+      const ek=edgeKey(n.parent.id,n.id);
+      if(!revealedEdges.has(ek)){
+        revealedEdges.add(ek);
+        const em=edgeMeshes.find(e=>e.fromId===n.parent.id&&e.toId===n.id);
+        if(em){em.mesh.visible=true;}
+      }
+    }
+  }
+
+  // update all node textures to reflect state
+  nodeMeshes.forEach((g,nid)=>{
+    const card=g.children[0];
+    if(!card)return;
+    const n=findNode(rootNode,nid);
+    if(!n)return;
+    const isActive=nid===activeNodeId;
+    const isVisited=visitedNodes.has(nid);
+    const hasReturned=returnedNodes.has(nid);
+    if(!isVisited){g.visible=false;return;}
+    g.visible=true;
+    // update texture
+    card.material.map.dispose();
+    card.material.map=cardTex(n,n.onPath,isActive,hasReturned);
+    card.material.needsUpdate=true;
+  });
+
+  // update edge colors (onPath edges glow)
+  edgeMeshes.forEach(e=>{
+    const n=findNode(rootNode,e.toId);
+    const onPath=n&&n.onPath&&(findNode(rootNode,e.fromId)?.onPath);
+    const col=onPath?'#ffd54f':'#3a4a5a';
+    e.mesh.material.color.set(col);
+    e.mesh.material.emissive.set(col);
+  });
+}
+
+function findNode(root,id){
+  if(root.id===id)return root;
+  for(const c of root.children){const f=findNode(c,id);if(f)return f;}
+  return null;
+}
+
+// ═══════════ UI ═══════════
+const codePanel=document.getElementById('code-panel');
+const stepDesc=document.querySelector('#info .desc');
+const stepMeta=document.querySelector('#info .meta');
+const stepNum=document.getElementById('step-num');
+const bNext=document.getElementById('b-next');
+const bPrev=document.getElementById('b-prev');
+const bAuto=document.getElementById('b-auto');
+const bReset=document.getElementById('b-reset');
+const speedV=document.getElementById('speed-v');
+
+function buildCodePanel(){
+  codePanel.innerHTML='';
+  CODE.forEach((txt,i)=>{
+    const d=document.createElement('div');d.className='ln';d.id='cl-'+i;
+    d.innerHTML=`<span class="n">${txt.trim()?i+1:''}</span><span class="c">${txt}</span>`;
+    codePanel.appendChild(d);
+  });
+}
+buildCodePanel();
+
+function hiLine(ln){
+  document.querySelectorAll('#code-panel .ln').forEach(e=>e.classList.remove('hi','dim'));
+  const el=document.getElementById('cl-'+ln);
+  if(el)el.classList.add('hi');
+}
+
+function updateUI(){
+  if(trace.length===0)return;
+  const s=trace[traceIdx];
+  hiLine(s.line);
+  stepDesc.innerHTML=s.desc;
+  const allNodesArr=allNodes(rootNode);
+  const totalVisited=visitedNodes.size;
+  stepMeta.innerHTML=`visited ${totalVisited}/${allNodesArr.length} nodes &bull; LCS = <b style="color:#ffd54f">${rootNode.value}</b>`;
+  stepNum.textContent=`${traceIdx+1}/${trace.length}`;
+  bNext.disabled=traceIdx>=trace.length-1;
+  bPrev.disabled=traceIdx<=0;
+  bAuto.disabled=traceIdx>=trace.length-1;
+  if(traceIdx>=trace.length-1){stopAuto();}
+}
+
+function goNext(){if(traceIdx<trace.length-1){traceIdx++;renderStep(traceIdx);updateUI();}}
+function goPrev(){if(traceIdx>0){traceIdx--;renderStep(traceIdx);updateUI();}}
+
+function startAuto(){
+  if(autoId)return;
+  const delays=[700,400,220,120,60];
+  const d=delays[Math.min(4,Math.max(0,(speedV.value||3)-1))];
+  bAuto.textContent='⏸ Pause';
+  function tick(){if(traceIdx>=trace.length-1){stopAuto();return;}goNext();autoId=setTimeout(tick,d);}
+  autoId=setTimeout(tick,d);
+}
+function stopAuto(){if(autoId){clearTimeout(autoId);autoId=null;}bAuto.textContent='⏩ Auto';}
+
+function fullReset(){
+  stopAuto();
+  rootNode=buildTree(t1,t2);
+  layout(rootNode);
+  buildSceneGraph(rootNode);
+  trace=genTrace(rootNode);
+  resetState();
+  traceIdx=0;
+  renderStep(0);
+  updateUI();
+  ctrl.target.set(0,-2,0);ctrl.update();
+}
+
+function loadEx(i){
+  exI=i;t1=EXS[i].t1;t2=EXS[i].t2;
+  nodeId=0;fullReset();
+}
+
+bNext.addEventListener('click',goNext);
+bPrev.addEventListener('click',goPrev);
+bReset.addEventListener('click',fullReset);
+bAuto.addEventListener('click',()=>{if(autoId)stopAuto();else startAuto();});
+speedV.addEventListener('input',()=>{if(autoId){stopAuto();startAuto();}});
+document.getElementById('ex-sel').addEventListener('change',e=>loadEx(parseInt(e.target.value)));
+
+window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  if(e.key==='ArrowRight'){e.preventDefault();goNext();}
+  if(e.key==='ArrowLeft'){e.preventDefault();goPrev();}
+  if(e.key===' '){e.preventDefault();if(autoId)stopAuto();else startAuto();}
+  if(e.key==='r'||e.key==='R'){if(!e.metaKey){e.preventDefault();fullReset();}}
+});
+
+// ═══════════ RESIZE ═══════════
+function resize(){
+  const w=glWrap.clientWidth,h=glWrap.clientHeight;
+  rend.setSize(w,h);cam.aspect=w/Math.max(h,1);cam.updateProjectionMatrix();
+}
+window.addEventListener('resize',resize);resize();
+
+// ═══════════ ANIMATION ═══════════
+const clk=new THREE.Clock();
+function anim(){
+  requestAnimationFrame(anim);
+  ctrl.update();
+
+  // scale-in animation for newly revealed nodes + pulse active node
+  nodeMeshes.forEach((g,nid)=>{
+    if(!g.visible)return;
+    const target=g.userData.basePos;
+    const tgtScale=nid===activeNodeId?1.08:1;
+    g.scale.lerp(new THREE.Vector3(tgtScale,tgtScale,tgtScale),.15);
+    // float active node slightly forward
+    const tgtZ=nid===activeNodeId?.15:0;
+    g.position.z+= (tgtZ-g.position.z)*.15;
+    // pulse active
+    if(nid===activeNodeId){
+      const s=1+.02*Math.sin(performance.now()*.01);
+      g.scale.setScalar(tgtScale*s);
+    }
+  });
+
+  // edge pulse for onPath edges
+  edgeMeshes.forEach(e=>{
+    const n=findNode(rootNode,e.toId);
+    if(n&&n.onPath&&findNode(rootNode,e.fromId)?.onPath){
+      const s=.7+.3*Math.sin(performance.now()*.005);
+      e.mesh.material.emissiveIntensity=s;
+    }
+  });
+
+  rend.render(scene,cam);
+}
+
+// ═══════════ INIT ═══════════
+rootNode=buildTree(t1,t2);
+layout(rootNode);
+buildSceneGraph(rootNode);
+trace=genTrace(rootNode);
+resetState();
+renderStep(0);
+updateUI();
+anim();
+
+console.log('🌳 LCS Recursion Tree ready');
+console.log('  ▶ Next = step  |  ◀ = back  |  Space = auto');
+console.log('  Drag = orbit  |  Scroll = zoom');
+console.log(`  Tree: ${allNodes(rootNode).length} nodes, ${trace.length} steps`);
+</script>

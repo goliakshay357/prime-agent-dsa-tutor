@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Climbing Stairs - Memoized Recursion Visualizer</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --panel: #1e293b;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #38bdf8;
+            --visited: #22c55e;
+            --cached: #3b82f6;
+            --current: #facc15;
+            --dict-bg: #0f172a;
+            --dict-border: #334155;
+            --line: #475569;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        h1 { margin: 0 0 0.5rem; font-size: 1.75rem; }
+        .subtitle { color: var(--muted); margin-bottom: 1.5rem; }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 1.5rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .stage {
+            background: var(--panel);
+            border-radius: 16px;
+            padding: 1.5rem;
+            min-height: 520px;
+            position: relative;
+            overflow: auto;
+        }
+
+        .tree {
+            position: relative;
+            width: 720px;
+            height: 460px;
+            margin: 0 auto;
+        }
+
+        .node {
+            position: absolute;
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.85rem;
+            border: 3px solid var(--line);
+            background: #334155;
+            color: var(--text);
+            transition: all 0.35s ease;
+            z-index: 2;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .node .label {
+            position: absolute;
+            bottom: -18px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 6px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            white-space: nowrap;
+        }
+
+        .node.visited {
+            background: var(--visited);
+            border-color: #16a34a;
+        }
+
+        .node.cached {
+            background: var(--cached);
+            border-color: #2563eb;
+            animation: pop 0.4s ease;
+        }
+
+        .node.cached .label {
+            opacity: 1;
+            background: var(--cached);
+            color: white;
+        }
+
+        .node.active {
+            box-shadow: 0 0 0 5px var(--current), 0 0 25px rgba(250, 204, 21, 0.7);
+            transform: scale(1.15);
+            z-index: 10;
+            animation: pulse-ring 1.2s infinite;
+        }
+
+        @keyframes pulse-ring {
+            0%, 100% { box-shadow: 0 0 0 4px var(--current), 0 0 20px rgba(250, 204, 21, 0.5); }
+            50% { box-shadow: 0 0 0 7px var(--current), 0 0 35px rgba(250, 204, 21, 0.9); }
+        }
+
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.25); }
+            100% { transform: scale(1); }
+        }
+
+        svg.edges {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        svg.edges line {
+            stroke: var(--line);
+            stroke-width: 2;
+            transition: stroke 0.3s;
+        }
+
+        svg.edges line.active {
+            stroke: var(--current);
+            stroke-width: 3;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .card {
+            background: var(--panel);
+            border-radius: 16px;
+            padding: 1.25rem;
+        }
+
+        .card h3 {
+            margin: 0 0 0.75rem;
+            font-size: 1rem;
+            color: var(--accent);
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        button {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+
+        button:active { transform: scale(0.96); }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #0f172a;
+        }
+
+        .btn-secondary {
+            background: #475569;
+            color: var(--text);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .stat {
+            background: var(--dict-bg);
+            padding: 0.75rem;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--muted);
+            text-transform: uppercase;
+        }
+
+        .dict-panel {
+            background: var(--dict-bg);
+            border-radius: 10px;
+            padding: 0.75rem;
+            min-height: 120px;
+        }
+
+        .dict-entry {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 0.4rem;
+            border-radius: 8px;
+            background: var(--dict-border);
+            font-family: ui-monospace, monospace;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+            opacity: 0.5;
+        }
+
+        .dict-entry:last-child { margin-bottom: 0; }
+
+        .dict-entry.active {
+            opacity: 1;
+            background: var(--cached);
+            color: white;
+            transform: scale(1.03);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+
+        .dict-entry.written {
+            opacity: 1;
+            border: 2px solid var(--visited);
+        }
+
+        .step-log {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            min-height: 120px;
+        }
+
+        .step-log .highlight {
+            color: var(--current);
+            font-weight: 700;
+        }
+
+        .step-log .cached {
+            color: var(--cached);
+            font-weight: 700;
+        }
+
+        .step-log .computed {
+            color: var(--visited);
+            font-weight: 700;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+        }
+
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            accent-color: var(--accent);
+        }
+
+        .code-block {
+            background: var(--dict-bg);
+            padding: 0.75rem;
+            border-radius: 10px;
+            font-family: ui-monospace, monospace;
+            font-size: 0.8rem;
+            overflow-x: auto;
+            color: #a5b4fc;
+        }
+
+        .comparison {
+            background: var(--dict-bg);
+            border-radius: 10px;
+            padding: 0.75rem;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .comparison strong { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div style="max-width:1200px;margin:0 auto;">
+        <h1>🪜 Climbing Stairs — Memoized Recursion (Top-Down DP)</h1>
+        <p class="subtitle">Click <strong>Next</strong> to watch recursion with a dictionary. Blue nodes are “tapped” from the cache — no recomputation.</p>
+    </div>
+
+    <div class="layout">
+        <div class="stage">
+            <div class="slider-row">
+                <label for="nSlider"><strong>n =</strong></label>
+                <input id="nSlider" type="range" min="2" max="6" value="5">
+                <span id="nValue" style="font-weight:700;width:24px;text-align:center;">5</span>
+            </div>
+
+            <div class="tree" id="tree"></div>
+        </div>
+
+        <div class="sidebar">
+            <div class="card">
+                <h3>Controls</h3>
+                <div class="controls">
+                    <button id="nextBtn" class="btn-primary">Next Step</button>
+                    <button id="resetBtn" class="btn-secondary">Reset</button>
+                </div>
+                <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center;">
+                    <input type="checkbox" id="autoCheck" style="accent-color:var(--accent);">
+                    <label for="autoCheck" style="font-size:0.85rem;">Auto-play</label>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Live Stats</h3>
+                <div class="stats-grid">
+                    <div class="stat">
+                        <span class="stat-value" id="totalCalls">0</span>
+                        <span class="stat-label">Calls Made</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="cacheHits">0</span>
+                        <span class="stat-label">Cache Hits</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="currentStep">0</span>
+                        <span class="stat-label">Step</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value" id="resultValue">-</span>
+                        <span class="stat-label">Result</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>What Just Happened?</h3>
+                <div class="step-log" id="stepLog">Press Next to start the animation.</div>
+            </div>
+
+            <div class="card">
+                <h3>Dictionary (Cache)</h3>
+                <div class="dict-panel" id="dictPanel">
+                    <div style="color:var(--muted);font-size:0.85rem;">Empty</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Comparison</h3>
+                <div class="comparison" id="comparison">
+                    Memoization stores each result after the first compute. Later calls just <strong>tap</strong> the dictionary.
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Legend</h3>
+                <div class="legend">
+                    <div class="legend-item"><span class="dot" style="background:#334155;border:2px solid #475569;"></span> Not visited</div>
+                    <div class="legend-item"><span class="dot" style="background:#facc15;box-shadow:0 0 0 3px #facc15;"></span> Current</div>
+                    <div class="legend-item"><span class="dot" style="background:#22c55e;"></span> Computed</div>
+                    <div class="legend-item"><span class="dot" style="background:#3b82f6;"></span> From cache</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Code Being Visualized</h3>
+                <div class="code-block">
+mem = {}<br>
+def helper(n):<br>
+&nbsp;&nbsp;if n in mem: return mem[n]<br>
+&nbsp;&nbsp;if n <= 1: return 1<br>
+&nbsp;&nbsp;mem[n] = helper(n-1) + helper(n-2)<br>
+&nbsp;&nbsp;return mem[n]
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* ---------- Same tree geometry as recursion visualizer ---------- */
+        const layouts = {
+            2: [
+                { id: '2-0', n: 2, x: 360, y: 30, parent: null },
+                { id: '1-1', n: 1, x: 300, y: 130, parent: '2-0' },
+                { id: '0-1', n: 0, x: 420, y: 130, parent: '2-0' },
+            ],
+            3: [
+                { id: '3-0', n: 3, x: 360, y: 20, parent: null },
+                { id: '2-1', n: 2, x: 260, y: 110, parent: '3-0' },
+                { id: '1-1', n: 1, x: 460, y: 110, parent: '3-0' },
+                { id: '1-2', n: 1, x: 210, y: 200, parent: '2-1' },
+                { id: '0-2', n: 0, x: 310, y: 200, parent: '2-1' },
+            ],
+            4: [
+                { id: '4-0', n: 4, x: 360, y: 10, parent: null },
+                { id: '3-1', n: 3, x: 220, y: 90, parent: '4-0' },
+                { id: '2-1', n: 2, x: 500, y: 90, parent: '4-0' },
+                { id: '2-2', n: 2, x: 150, y: 180, parent: '3-1' },
+                { id: '1-2', n: 1, x: 290, y: 180, parent: '3-1' },
+                { id: '1-3', n: 1, x: 100, y: 280, parent: '2-2' },
+                { id: '0-3', n: 0, x: 200, y: 280, parent: '2-2' },
+                { id: '1-4', n: 1, x: 450, y: 180, parent: '2-1' },
+                { id: '0-4', n: 0, x: 550, y: 180, parent: '2-1' },
+            ],
+            5: [
+                { id: '5-0', n: 5, x: 360, y: 10, parent: null },
+                { id: '4-1', n: 4, x: 200, y: 80, parent: '5-0' },
+                { id: '3-1', n: 3, x: 520, y: 80, parent: '5-0' },
+                { id: '3-2', n: 3, x: 110, y: 160, parent: '4-1' },
+                { id: '2-2', n: 2, x: 290, y: 160, parent: '4-1' },
+                { id: '2-3', n: 2, x: 60, y: 250, parent: '3-2' },
+                { id: '1-3', n: 1, x: 160, y: 250, parent: '3-2' },
+                { id: '1-4', n: 1, x: 20, y: 350, parent: '2-3' },
+                { id: '0-4', n: 0, x: 100, y: 350, parent: '2-3' },
+                { id: '1-5', n: 1, x: 250, y: 250, parent: '2-2' },
+                { id: '0-5', n: 0, x: 330, y: 250, parent: '2-2' },
+                { id: '2-4', n: 2, x: 450, y: 160, parent: '3-1' },
+                { id: '1-6', n: 1, x: 410, y: 250, parent: '2-4' },
+                { id: '0-6', n: 0, x: 490, y: 250, parent: '2-4' },
+                { id: '1-7', n: 1, x: 590, y: 160, parent: '3-1' },
+            ],
+            6: [
+                { id: '6-0', n: 6, x: 360, y: 10, parent: null },
+                { id: '5-1', n: 5, x: 180, y: 70, parent: '6-0' },
+                { id: '4-1', n: 4, x: 540, y: 70, parent: '6-0' },
+                { id: '4-2', n: 4, x: 80, y: 140, parent: '5-1' },
+                { id: '3-2', n: 3, x: 280, y: 140, parent: '5-1' },
+                { id: '3-3', n: 3, x: 30, y: 220, parent: '4-2' },
+                { id: '2-3', n: 2, x: 130, y: 220, parent: '4-2' },
+                { id: '2-4', n: 2, x: 10, y: 310, parent: '3-3' },
+                { id: '1-4', n: 1, x: 70, y: 310, parent: '3-3' },
+                { id: '1-5', n: 1, x: 0, y: 400, parent: '2-4' },
+                { id: '0-5', n: 0, x: 50, y: 400, parent: '2-4' },
+                { id: '1-6', n: 1, x: 110, y: 310, parent: '2-3' },
+                { id: '0-6', n: 0, x: 160, y: 310, parent: '2-3' },
+                { id: '2-5', n: 2, x: 230, y: 220, parent: '3-2' },
+                { id: '1-7', n: 1, x: 200, y: 310, parent: '2-5' },
+                { id: '0-7', n: 0, x: 260, y: 310, parent: '2-5' },
+                { id: '3-4', n: 3, x: 470, y: 140, parent: '4-1' },
+                { id: '2-6', n: 2, x: 420, y: 220, parent: '3-4' },
+                { id: '1-8', n: 1, x: 390, y: 310, parent: '2-6' },
+                { id: '0-8', n: 0, x: 450, y: 310, parent: '2-6' },
+                { id: '1-9', n: 1, x: 520, y: 220, parent: '3-4' },
+                { id: '2-7', n: 2, x: 610, y: 140, parent: '4-1' },
+                { id: '1-10', n: 1, x: 580, y: 220, parent: '2-7' },
+                { id: '0-10', n: 0, x: 640, y: 220, parent: '2-7' },
+            ],
+        };
+
+        /* ---------- Generate memoized recursion trace ---------- */
+        function generateSteps(n) {
+            const steps = [];
+            const mem = {};
+
+            function helper(val, path) {
+                const cached = mem[val] !== undefined;
+
+                steps.push({
+                    type: 'enter',
+                    n: val,
+                    path: path,
+                    cached: cached,
+                    description: cached
+                        ? `helper(${val}) is in dictionary! Tap it → return ${mem[val]}.`
+                        : `First time helper(${val}). Compute and store.`
+                });
+
+                if (cached) {
+                    steps.push({
+                        type: 'cache-hit-return',
+                        n: val,
+                        path: path,
+                        value: mem[val],
+                        description: `helper(${val}) returns cached ${mem[val]}.`
+                    });
+                    return mem[val];
+                }
+
+                if (val <= 1) {
+                    steps.push({
+                        type: 'return',
+                        n: val,
+                        path: path,
+                        value: 1,
+                        description: `helper(${val}) base case returns 1.`
+                    });
+                    return 1;
+                }
+
+                const left = helper(val - 1, path + 'L');
+                steps.push({
+                    type: 'combine',
+                    n: val,
+                    path: path,
+                    description: `helper(${val}) got left = ${left}. Now right side...`
+                });
+                const right = helper(val - 2, path + 'R');
+                const result = left + right;
+
+                mem[val] = result;
+                steps.push({
+                    type: 'cache-write',
+                    n: val,
+                    path: path,
+                    value: result,
+                    description: `Store helper(${val}) = ${result} in dictionary.`
+                });
+
+                steps.push({
+                    type: 'return',
+                    n: val,
+                    path: path,
+                    value: result,
+                    description: `helper(${val}) returns ${result}.`
+                });
+
+                return result;
+            }
+
+            const final = helper(n, '');
+            return { steps, final, mem };
+        }
+
+        /* ---------- DOM rendering ---------- */
+        const treeEl = document.getElementById('tree');
+        const nSlider = document.getElementById('nSlider');
+        const nValue = document.getElementById('nValue');
+        const nextBtn = document.getElementById('nextBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const autoCheck = document.getElementById('autoCheck');
+        const stepLog = document.getElementById('stepLog');
+        const dictPanel = document.getElementById('dictPanel');
+        const comparison = document.getElementById('comparison');
+
+        let n = 5;
+        let currentStep = 0;
+        let steps = [];
+        let finalResult = 0;
+        let finalMem = {};
+        let autoTimer = null;
+
+        function renderTree() {
+            treeEl.innerHTML = '';
+            const layout = layouts[n];
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'edges');
+            treeEl.appendChild(svg);
+
+            layout.forEach(node => {
+                const el = document.createElement('div');
+                el.className = 'node';
+                el.id = `node-${node.id}`;
+                el.style.left = `${node.x - 32}px`;
+                el.style.top = `${node.y - 32}px`;
+                el.innerHTML = `helper(${node.n})<span class="label">cached</span>`;
+                treeEl.appendChild(el);
+
+                if (node.parent) {
+                    const parent = layout.find(p => p.id === node.parent);
+                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    line.setAttribute('x1', parent.x);
+                    line.setAttribute('y1', parent.y + 30);
+                    line.setAttribute('x2', node.x);
+                    line.setAttribute('y2', node.y - 30);
+                    line.setAttribute('id', `edge-${node.parent}-${node.id}`);
+                    svg.appendChild(line);
+                }
+            });
+        }
+
+        function renderDictPanel() {
+            const entries = Object.entries(finalMem).sort((a, b) => a[0] - b[0]);
+            if (entries.length === 0) {
+                dictPanel.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;">Empty</div>';
+                return;
+            }
+
+            dictPanel.innerHTML = '';
+            entries.forEach(([key, val]) => {
+                const div = document.createElement('div');
+                div.className = 'dict-entry';
+                div.id = `dict-${key}`;
+                div.innerHTML = `<span>helper(${key})</span><span>= ${val}</span>`;
+                dictPanel.appendChild(div);
+            });
+        }
+
+        function reset() {
+            currentStep = 0;
+            const generated = generateSteps(n);
+            steps = generated.steps;
+            finalResult = generated.final;
+            finalMem = generated.mem;
+
+            const layout = layouts[n];
+            layout.forEach(node => node.path = '');
+            function setPaths(parentId, currentPath) {
+                const children = layout.filter(c => c.parent === parentId);
+                children.forEach((child, idx) => {
+                    child.path = currentPath + (idx === 0 ? 'L' : 'R');
+                    setPaths(child.id, child.path);
+                });
+            }
+            setPaths(layout[0].id, '');
+
+            steps.forEach(step => {
+                const match = layout.find(node => node.n === step.n && node.path === step.path);
+                step.nodeId = match ? match.id : null;
+            });
+
+            renderTree();
+            renderDictPanel();
+            updateStats();
+            stepLog.innerHTML = 'Press <span class="highlight">Next</span> to start the animation.';
+            nextBtn.textContent = 'Next Step';
+            nextBtn.disabled = false;
+
+            const plainRecursion = countPlainRecursionCalls(n);
+            const memoCalls = steps.filter(s => s.type === 'enter').length;
+            comparison.innerHTML = `
+                Plain recursion makes <strong>${plainRecursion}</strong> calls for n = ${n}.<br>
+                Memoization makes only <strong>${memoCalls}</strong> calls by tapping the dictionary.
+            `;
+        }
+
+        function countPlainRecursionCalls(n) {
+            const memo = { 0: 1, 1: 1 };
+            for (let i = 2; i <= n; i++) memo[i] = memo[i - 1] + memo[i - 2] + 1;
+            return memo[n];
+        }
+
+        function updateStats() {
+            let calls = 0;
+            let hits = 0;
+            for (let i = 0; i < currentStep; i++) {
+                const s = steps[i];
+                if (s.type === 'enter') {
+                    calls++;
+                    if (s.cached) hits++;
+                }
+            }
+
+            document.getElementById('totalCalls').textContent = calls;
+            document.getElementById('cacheHits').textContent = hits;
+            document.getElementById('currentStep').textContent = `${currentStep} / ${steps.length}`;
+            document.getElementById('resultValue').textContent = currentStep === steps.length ? finalResult : '-';
+        }
+
+        function renderStep() {
+            // Clear active highlights
+            document.querySelectorAll('.node.active').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.edges line.active').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.dict-entry.active').forEach(el => el.classList.remove('active'));
+
+            // Recompute state: first occurrence is computed (green), later are cached (blue)
+            const nFirstNode = {};
+            for (let i = 0; i < currentStep; i++) {
+                const s = steps[i];
+                if (s.type !== 'enter' || !s.nodeId) continue;
+                if (!(s.n in nFirstNode)) nFirstNode[s.n] = s.nodeId;
+            }
+
+            document.querySelectorAll('.node').forEach(el => {
+                el.classList.remove('visited', 'cached');
+            });
+
+            for (let i = 0; i < currentStep; i++) {
+                const s = steps[i];
+                if (s.type !== 'enter' || !s.nodeId) continue;
+                const el = document.getElementById(`node-${s.nodeId}`);
+                if (!el) continue;
+                const isFirst = nFirstNode[s.n] === s.nodeId;
+                el.classList.add(isFirst ? 'visited' : 'cached');
+            }
+
+            // Mark dictionary entries as written once they exist up to current step
+            document.querySelectorAll('.dict-entry').forEach(el => {
+                el.classList.remove('written');
+            });
+            const writtenKeys = new Set();
+            for (let i = 0; i < currentStep; i++) {
+                const s = steps[i];
+                if (s.type === 'cache-write') writtenKeys.add(String(s.n));
+            }
+            writtenKeys.forEach(key => {
+                const el = document.getElementById(`dict-${key}`);
+                if (el) el.classList.add('written');
+            });
+
+            // Highlight current step
+            if (currentStep > 0 && currentStep <= steps.length) {
+                const s = steps[currentStep - 1];
+
+                if (s.nodeId) {
+                    const el = document.getElementById(`node-${s.nodeId}`);
+                    if (el) el.classList.add('active');
+
+                    if (s.type === 'enter') {
+                        const layout = layouts[n];
+                        const node = layout.find(nd => nd.id === s.nodeId);
+                        if (node && node.parent) {
+                            const edge = document.getElementById(`edge-${node.parent}-${node.id}`);
+                            if (edge) edge.classList.add('active');
+                        }
+                    }
+                }
+
+                // Highlight dictionary entry on cache hit / write
+                if (s.cached || s.type === 'cache-write' || s.type === 'cache-hit-return') {
+                    const dictEl = document.getElementById(`dict-${s.n}`);
+                    if (dictEl) dictEl.classList.add('active');
+                }
+
+                let msg = s.description;
+                if (s.type === 'enter' && s.cached) {
+                    msg = `<span class="cached">${msg}</span>`;
+                } else if (s.type === 'enter') {
+                    msg = `<span class="computed">${msg}</span>`;
+                } else if (s.type === 'cache-write') {
+                    msg = `<span class="computed">${msg}</span>`;
+                }
+                stepLog.innerHTML = `${currentStep}. ${msg}`;
+            }
+
+            updateStats();
+
+            if (currentStep === steps.length) {
+                nextBtn.textContent = 'Done';
+                nextBtn.disabled = true;
+                stepLog.innerHTML += `<br><br><span class="highlight">✅ Final answer: ${finalResult} ways to climb ${n} stairs.</span>`;
+                if (autoTimer) {
+                    clearInterval(autoTimer);
+                    autoTimer = null;
+                    autoCheck.checked = false;
+                }
+            }
+        }
+
+        function next() {
+            if (currentStep < steps.length) {
+                currentStep++;
+                renderStep();
+            }
+        }
+
+        nextBtn.addEventListener('click', () => {
+            if (autoTimer) {
+                clearInterval(autoTimer);
+                autoTimer = null;
+                autoCheck.checked = false;
+            }
+            next();
+        });
+
+        resetBtn.addEventListener('click', () => {
+            if (autoTimer) {
+                clearInterval(autoTimer);
+                autoTimer = null;
+                autoCheck.checked = false;
+            }
+            reset();
+        });
+
+        nSlider.addEventListener('input', () => {
+            n = parseInt(nSlider.value);
+            nValue.textContent = n;
+            reset();
+        });
+
+        autoCheck.addEventListener('change', () => {
+            if (autoCheck.checked) {
+                autoTimer = setInterval(() => {
+                    if (currentStep >= steps.length) {
+                        clearInterval(autoTimer);
+                        autoTimer = null;
+                        autoCheck.checked = false;
+                    } else {
+                        next();
+                    }
+                }, 900);
+            } else if (autoTimer) {
+                clearInterval(autoTimer);
+                autoTimer = null;
+            }
+        });
+
+        // Start
+        reset();
+    </script>
+</body>
+</html>

@@ -1,0 +1,505 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title><!-- PROBLEM_NAME --> — <!-- STAGE: Brute Force | Memoization | Tabulation --></title>
+<style>
+:root{
+  --bg:#080c12;--surface:#111820;--surface2:#1a2430;--text:#dde4ec;--muted:#6b7d90;
+  --accent:#7c9af2;--gold:#ffd54f;--green:#69f0ae;--red:#ff5252;
+  --font:system-ui,-apple-system,'Segoe UI',sans-serif;--mono:'SF Mono','Cascadia Code','Fira Code',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);font-family:var(--font);color:var(--text)}
+#app{display:flex;height:100%}
+#gl{flex:1;position:relative;min-width:0;touch-action:none}
+#gl canvas{display:block;touch-action:none}
+#gl-hint{position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--muted);background:var(--surface);padding:3px 10px;border-radius:10px;pointer-events:none;opacity:.7;z-index:2}
+#side{width:380px;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--surface2);z-index:5;overflow:hidden;touch-action:pan-y}
+#code-panel{overflow-y:auto;padding:6px 10px;font-family:var(--mono);font-size:11px;line-height:1.75;max-height:175px;border-bottom:1px solid var(--surface2)}
+#code-panel .ln{display:flex;padding:0 6px;border-radius:3px;transition:background .15s}
+#code-panel .ln .n{color:var(--muted);width:22px;text-align:right;margin-right:8px;flex-shrink:0;user-select:none}
+#code-panel .ln .c{white-space:pre;flex:1}
+#code-panel .ln.hi{background:var(--accent);color:#fff;box-shadow:0 0 10px #7c9af244}
+#code-panel .ln.hi .n{color:#fffc}
+#info{padding:10px 12px;border-top:1px solid var(--surface2);min-height:48px;font-size:13px;line-height:1.4}
+#info .desc{color:var(--text)}
+#info .meta{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px}
+#ctrls{display:flex;gap:5px;padding:8px 10px;border-top:1px solid var(--surface2);align-items:center;flex-wrap:wrap}
+button,select{font-family:var(--font);font-size:12px;font-weight:600;padding:7px 12px;border-radius:7px;border:none;cursor:pointer;background:var(--surface2);color:var(--text);min-height:38px;white-space:nowrap;transition:background .15s,transform .1s}
+button:active{transform:scale(.96)}
+button.pri{background:var(--accent);color:#fff;font-size:14px;padding:8px 16px}
+button:disabled{opacity:.3;pointer-events:none}
+#step-num{font-size:11px;color:var(--muted);font-family:var(--mono);min-width:55px;text-align:center}
+#speed-v{width:50px;accent-color:var(--accent)}
+@media(max-width:700px){
+  #app{flex-direction:column}
+  #gl{height:48vh}
+  #side{width:100%;height:52vh;border-left:none;border-top:1px solid var(--surface2)}
+}
+</style>
+
+<div id="app">
+  <div id="gl"><div id="gl-hint">orbit ·  zoom ·  pan</div></div>
+  <div id="side">
+    <div id="code-panel"></div>
+    <div id="info"><div class="desc">Ready. Press <b> Next</b> to step through.</div><div class="meta"></div></div>
+    <div id="ctrls">
+      <button id="b-prev"></button>
+      <span id="step-num">/</span>
+      <button id="b-next" class="pri"> Next</button>
+      <button id="b-auto"> Auto</button>
+      <button id="b-reset"></button>
+      <select id="ex-sel"><!-- EXAMPLES --></select>
+      <label style="font-size:10px;color:var(--muted);display:flex;align-items:center;gap:2px"><input id="speed-v" type="range" min="1" max="5" value="3"></label>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/OrbitControls.js';
+
+// ======= FILL IN: Your problem data =======
+// EXAMPLES: Multiple test cases the user can switch between
+const EXAMPLES = [
+  // { name: "example-name", input1: ..., input2: ... }
+];
+
+// ======= FILL IN: Your algorithm code (displayed in the code panel) =======
+// Each string is one line. Line numbers match trace steps below.
+const CODE = [
+  'def solve(input):',
+  '    # your code here',
+  '    return result',
+];
+
+// ======= FILL IN: Build the computation tree / state graph =======
+// For recursion: build a Node tree (parent, children, value, type)
+// For tabulation: build a table/grid with cell dependencies
+//
+// Node types for recursion:
+//   'base'  = base case (leaf)
+//   'match' = characters/elements match -> single child
+//   'branch'= mismatch -> two children (try both paths)
+//   'hit'   = memo lookup hit (no children, return stored value)
+//
+// Color coding (consistent across all visualizations):
+//   YELLOW (#ffd54f) = current / active node or cell
+//   BLUE   (#7c9af2) = dependency (what current reads from)
+//   GREEN  (#69f0ae) = answer / match / optimal path
+//   RED    (#ff5252) = wasted / recomputed / memo hit
+//   GRAY   (#555)    = base case / empty
+
+let rootNode = null;  // The root of your computation tree
+
+function buildTree() {
+  // FILL IN: Build your tree/graph structure here
+  // Return the root node
+}
+
+// ======= FILL IN: Generate the step-by-step trace =======
+// Each step: { line: <code line number>, nid: <node id>, action: '<type>', val: <value>, desc: '<human explanation>' }
+//
+// Action types and their visual effect:
+//   'enter'      - node appears (card fades in)
+//   'compare'    - show comparison result (match/mismatch)
+//   'recurse'    - arrow lights up to child
+//   'base'       - base case reached (gray card)
+//   'hit'        - memo hit (RED glow, "pulled from memory!")
+//   'miss'       - memo miss (must compute)
+//   'store'      - value written to memo/grid (GREEN flash)
+//   'return_val' - value returned up the tree
+//   'done'       - final answer
+
+function generateTrace(root) {
+  const trace = [];
+
+  function walk(node) {
+    // FILL IN: Generate trace steps by walking your tree
+    // Each push adds one step the user sees when clicking Next
+    trace.push({
+      line: 1,              // which code line is executing
+      nid: node.id,         // which node is active
+      action: 'enter',      // what kind of step
+      desc: 'Explain what just happened in plain English'
+    });
+
+    // Recurse into children...
+  }
+
+  walk(root);
+  trace.push({ line: -1, nid: null, action: 'done', desc: ' Done. Answer = ' + root.value });
+  return trace;
+}
+
+// ======= THREE.JS SETUP (don't modify) =======
+const glWrap = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+glWrap.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#080c12');
+const camera = new THREE.PerspectiveCamera(40, 2, 0.5, 50);
+camera.position.set(4, 6, 9);
+camera.lookAt(0, -2, 0);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, -2, 0);
+controls.minDistance = 2;
+controls.maxDistance = 30;
+controls.update();
+
+scene.add(new THREE.AmbientLight('#8899bb', 2.5));
+const dirLight = new THREE.DirectionalLight('#fff', 3);
+dirLight.position.set(5, 10, 5);
+scene.add(dirLight);
+scene.add(new THREE.DirectionalLight('#8899cc', 1.2)).position.set(-3, 2, -3);
+
+// ======= NODE CARD RENDERING (canvas -> texture) =======
+// FILL IN: Customize cardTex to show your problem's data
+// The card shows: input values, current state, answer badge
+// Color border based on node type and whether it's active/on-path
+
+function cardTex(node, isOnPath, isActive, showValue) {
+  const W = 380, H = 140;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+
+  // Background color based on node type
+  let bg = '#1a2840';  // default
+  if (isActive && node.type === 'hit') bg = '#4d2818';      // memo hit
+  else if (node.type === 'hit') bg = '#381c10';
+  else if (isActive) bg = '#284878';                         // active
+  else if (node.type === 'base') bg = '#1a1a2e';            // base case
+
+  roundRect(ctx, 0, 0, W, H, 12);
+  ctx.fillStyle = bg;
+  ctx.fill();
+
+  // Border color
+  const borderColor = node.type === 'hit' ? '#ff5252' :
+                       node.type === 'match' ? '#69f0ae' :
+                       node.type === 'branch' ? '#7c9af2' : '#555';
+  ctx.strokeStyle = isOnPath && node.type !== 'hit' ? '#ffd54f' : borderColor;
+  ctx.lineWidth = isOnPath ? 4 : 3;
+  if (isActive) {
+    ctx.shadowColor = isOnPath ? '#ffd54f' : borderColor;
+    ctx.shadowBlur = 14;
+  }
+  roundRect(ctx, 2, 2, W - 4, H - 4, 12);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // FILL IN: Draw your problem-specific data on the card
+  // Example: show input strings/arrays, highlight the current element
+
+  // Draw value badge if computed
+  if (showValue && node.value !== null) {
+    const vw = 36, vh = 28, vx = W - vw - 12, vy = H - vh - 10;
+    ctx.fillStyle = '#0008';
+    roundRect(ctx, vx, vy, vw, vh, 8);
+    ctx.fill();
+    ctx.fillStyle = node.type === 'hit' ? '#ff8a65' : '#ffd54f';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(node.value, vx + vw / 2, vy + vh / 2 + 7);
+    ctx.textAlign = 'start';
+  }
+
+  return new THREE.CanvasTexture(cv);
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ======= TREE LAYOUT =======
+// FILL IN: Layout algorithm positions nodes in 3D space
+// Standard: depth = y (negative going down), leaves spread across x
+
+function layoutTree(root) {
+  let leafX = 0;
+  function dfs(node, depth) {
+    node.depth = depth;
+    if (!node.children || node.children.length === 0) {
+      node._x = leafX;
+      node._y = -depth * 0.7;
+      leafX++;
+      return;
+    }
+    for (const child of node.children) dfs(child, depth + 1);
+    node._x = (node.children[0]._x + node.children[node.children.length - 1]._x) / 2;
+    node._y = -depth * 0.7;
+  }
+  dfs(root, 0);
+  // Center the tree
+  const allNodes = getAllNodes(root);
+  const cx = allNodes.reduce((s, n) => s + n._x, 0) / allNodes.length;
+  allNodes.forEach(n => n._x -= cx);
+}
+
+function getAllNodes(root) {
+  const nodes = [];
+  (function collect(n) { nodes.push(n); n.children && n.children.forEach(collect); })(root);
+  return nodes;
+}
+
+// ======= THREE.JS SCENE BUILDING =======
+const TREE_SCALE = 2.6, CARD_W = 2.4, CARD_H = 0.88;
+let nodeMeshes = new Map(), edgeMeshes = [];
+
+function clearScene() {
+  nodeMeshes.forEach(g => {
+    g.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) { if (c.material.map) c.material.map.dispose(); c.material.dispose(); } });
+    scene.remove(g);
+  });
+  nodeMeshes.clear();
+  edgeMeshes.forEach(e => { e.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); }); scene.remove(e); });
+  edgeMeshes = [];
+}
+
+function makeEdge(from, to, onPath) {
+  const sv = new THREE.Vector3(from._x * TREE_SCALE, from._y * TREE_SCALE, 0);
+  const ev = new THREE.Vector3(to._x * TREE_SCALE, to._y * TREE_SCALE, 0);
+  const dir = new THREE.Vector3().subVectors(ev, sv);
+  const len = dir.length();
+  const mid = new THREE.Vector3().addVectors(sv, ev).multiplyScalar(0.5);
+  const geo = new THREE.CylinderGeometry(0.03, 0.03, len, 6, 1);
+  const color = onPath ? '#ffd54f' : '#3a4a5a';
+  const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.5, roughness: 0.3 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(mid);
+  mesh.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize()));
+  mesh.visible = false;
+  scene.add(mesh);
+  return mesh;
+}
+
+function buildScene(root) {
+  clearScene();
+  const allNodes = getAllNodes(root);
+
+  allNodes.forEach(n => {
+    const group = new THREE.Group();
+    const tex = cardTex(n, n.onPath || false, false, false);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthTest: true });
+    const card = new THREE.Mesh(new THREE.PlaneGeometry(CARD_W, CARD_H), mat);
+    card.name = 'card';
+    group.add(card);
+    group.position.set(n._x * TREE_SCALE, n._y * TREE_SCALE, 0.1);
+    group.visible = false;
+    group.userData = { nodeId: n.id };
+    scene.add(group);
+    nodeMeshes.set(n.id, group);
+  });
+
+  allNodes.forEach(n => {
+    n.children && n.children.forEach(c => {
+      edgeMeshes.push(makeEdge(n, c, (n.onPath && c.onPath) || false));
+    });
+  });
+}
+
+// ======= CODE PANEL =======
+function buildCodePanel() {
+  const panel = document.getElementById('code-panel');
+  panel.innerHTML = CODE.map((line, i) =>
+    `<div class="ln" id="cl-${i + 1}"><span class="n">${i + 1}</span><span class="c">${line}</span></div>`
+  ).join('');
+}
+
+// ======= STEP RENDERING =======
+let trace = [], traceIdx = 0;
+let visitedNodes = new Set(), returnedNodes = new Set();
+let autoTimer = null;
+
+function renderStep(idx) {
+  if (idx >= trace.length) return;
+  const step = trace[idx];
+
+  // Mark returned nodes
+  if (step.action === 'return_val' && step.nid !== null) returnedNodes.add(step.nid);
+
+  // Reveal newly visited nodes
+  if (step.nid !== null && !visitedNodes.has(step.nid)) {
+    visitedNodes.add(step.nid);
+    const group = nodeMeshes.get(step.nid);
+    if (group) { group.visible = true; group.scale.set(0.01, 0.01, 0.01); }
+  }
+
+  // Reveal edges from parent
+  if (step.nid !== null) {
+    const node = findNode(rootNode, step.nid);
+    if (node && node.parent) {
+      let ec = 0;
+      for (const en of getAllNodes(rootNode)) {
+        for (const c of en.children || []) {
+          if (c.id === node.id && ec < edgeMeshes.length) {
+            edgeMeshes[ec].visible = true;
+            return;
+          }
+          ec++;
+        }
+      }
+    }
+  }
+
+  // Update all node cards (re-render textures)
+  nodeMeshes.forEach((group, nid) => {
+    const n = findNode(rootNode, nid);
+    if (!n || !visitedNodes.has(nid)) { group.visible = false; return; }
+    group.visible = true;
+    const card = group.children[0];
+    if (card && card.material.map) {
+      card.material.map.dispose();
+      card.material.map = cardTex(n, n.onPath || false, nid === step.nid, returnedNodes.has(nid));
+      card.material.needsUpdate = true;
+    }
+  });
+
+  // Update edge colors (on-path = gold, off-path = dark)
+  let ec2 = 0;
+  for (const en of getAllNodes(rootNode)) {
+    for (const c of en.children || []) {
+      if (ec2 < edgeMeshes.length && edgeMeshes[ec2].visible) {
+        const onPath = en.onPath && c.onPath && c.type !== 'hit';
+        edgeMeshes[ec2].material.color.set(onPath ? '#ffd54f' : '#3a4a5a');
+        edgeMeshes[ec2].material.emissive.set(onPath ? '#ffd54f' : '#3a4a5a');
+      }
+      ec2++;
+    }
+  }
+
+  // Highlight code line
+  document.querySelectorAll('#code-panel .ln.hi').forEach(el => el.classList.remove('hi'));
+  if (step.line > 0) {
+    const codeLine = document.getElementById('cl-' + step.line);
+    if (codeLine) codeLine.classList.add('hi');
+  }
+
+  // Update info panel
+  document.querySelector('#info .desc').innerHTML = step.desc;
+  document.querySelector('#info .meta').textContent =
+    `Step ${idx + 1}/${trace.length}  action: ${step.action}${step.val !== undefined ? '  val: ' + step.val : ''}`;
+}
+
+function findNode(root, id) {
+  if (root.id === id) return root;
+  for (const child of root.children || []) {
+    const found = findNode(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+// ======= CONTROLS =======
+function updateUI() {
+  document.getElementById('step-num').textContent = `${traceIdx + 1}/${trace.length}`;
+  document.getElementById('b-next').disabled = traceIdx >= trace.length - 1;
+  document.getElementById('b-prev').disabled = traceIdx <= 0;
+}
+
+function goNext() { if (traceIdx < trace.length - 1) { traceIdx++; renderStep(traceIdx); updateUI(); } }
+function goPrev() { if (traceIdx > 0) { traceIdx--; renderStep(traceIdx); updateUI(); } }
+function goReset() { traceIdx = -1; visitedNodes.clear(); returnedNodes.clear(); goNext(); }
+
+function startAuto() {
+  if (autoTimer) return;
+  const delays = [700, 400, 220, 120, 60];
+  const d = delays[Math.min(4, Math.max(0, (document.getElementById('speed-v').value || 3) - 1))];
+  document.getElementById('b-auto').textContent = ' Pause';
+  function tick() { if (traceIdx >= trace.length - 1) { stopAuto(); return; } goNext(); autoTimer = setTimeout(tick, d); }
+  autoTimer = setTimeout(tick, d);
+}
+function stopAuto() {
+  if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+  document.getElementById('b-auto').textContent = ' Auto';
+}
+
+// ======= INIT =======
+function loadExample(index) {
+  // FILL IN: Load problem data for the selected example
+  // Rebuild tree, trace, and scene
+  // rootNode = buildTree(EXAMPLES[index]);
+  layoutTree(rootNode);
+  buildScene(rootNode);
+  buildCodePanel();
+  trace = generateTrace(rootNode);
+  traceIdx = -1;
+  visitedNodes.clear();
+  returnedNodes.clear();
+  stopAuto();
+  goNext();
+}
+
+// Populate example selector
+const sel = document.getElementById('ex-sel');
+// FILL IN: EXAMPLES.forEach((ex, i) => { const opt = document.createElement('option'); opt.value = i; opt.textContent = ex.name; sel.appendChild(opt); });
+
+// Event listeners
+document.getElementById('b-next').addEventListener('click', goNext);
+document.getElementById('b-prev').addEventListener('click', goPrev);
+document.getElementById('b-reset').addEventListener('click', goReset);
+document.getElementById('b-auto').addEventListener('click', () => { if (autoTimer) stopAuto(); else startAuto(); });
+document.getElementById('speed-v').addEventListener('input', () => { if (autoTimer) { stopAuto(); startAuto(); } });
+sel.addEventListener('change', e => loadExample(parseInt(e.target.value)));
+
+// Keyboard shortcuts
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
+  if (e.key === ' ') { e.preventDefault(); if (autoTimer) stopAuto(); else startAuto(); }
+  if (e.key === 'r' || e.key === 'R') { if (!e.metaKey) { e.preventDefault(); goReset(); } }
+});
+
+// Resize handler
+function resize() {
+  const w = glWrap.clientWidth, h = glWrap.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / Math.max(h, 1);
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Animation loop
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  // Animate scaling for newly visible nodes
+  nodeMeshes.forEach((group) => {
+    if (group.visible && group.scale.x < 1) {
+      const s = Math.min(1, group.scale.x + 0.08);
+      group.scale.set(s, s, s);
+    }
+  });
+  renderer.render(scene, camera);
+}
+
+// FILL IN: Load the first example to initialize
+// loadExample(0);
+animate();
+
+console.log('Template ready. Fill in the FILL IN sections with your problem data.');
+</script>
