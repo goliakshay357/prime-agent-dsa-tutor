@@ -1,0 +1,20 @@
+{
+  "name": "prime-agent-dsa-tutor",
+  "version": "1.0.0",
+  "description": "Socratic DSA tutor for Prime Agent — brute-force to optimized progression with interactive Three.js 3D visualizations. ADHD-friendly.",
+  "keywords": ["pi-package", "dsa", "algorithms", "education", "visualization", "tutor"],
+  "author": "",
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}
