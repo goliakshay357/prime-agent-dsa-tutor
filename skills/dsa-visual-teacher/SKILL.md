@@ -1,54 +1,159 @@
 ---
 name: dsa-visual-teacher
-description: Teach a DSA / dynamic-programming / algorithm problem to a beginner through an interactive, self-contained HTML walkthrough. Use when the user gives a new algorithm or DP problem statement and wants it explained step by step, visually, with animations — especially if they say they are new, find DP hard, want it "phase by phase", want finger/pointer tracing, want live code sync, or reference this teaching style. Produces one single .html file named after the problem, containing phased explanations, a pointer-tracing panel, an animated DP table, interview-style KISS Python code with per-step line highlighting, and a live variables panel.
+description: 'Teach a DSA/DP/algorithm problem through an interactive, self-contained HTML walkthrough with 3D visualizations. Use when explaining any algorithm step-by-step.'
 ---
 
 # DSA Visual Teacher
 
-Teach algorithm problems to a beginner by building ONE self-contained interactive HTML page. No frameworks, no CDNs, no external files — inline CSS + vanilla JS only, works offline by double-clicking.
+Teach algorithm problems by building ONE self-contained interactive HTML page. No frameworks, no CDNs beyond Three.js import map, no external files — inline CSS + vanilla JS only. Works offline by double-clicking.
 
-## Non-negotiables (learned from the user)
+## Quick Start
 
-1. **Phases, never a wall of text.** Split the lesson into 4–6 named phases, each phase = ONE small idea. Buttons: Next / Back / Replay phase, plus a phase-jump bar.
-2. **Concrete before abstract.** Use the problem's actual data everywhere (real strings/arrays, real indices). Never explain with generic "i, j, k" before showing real values.
-3. **Physical metaphor first.** Two sequences = two fingers pointing at letters. A DP table cell = "one pair of finger positions". A diagonal lookup = "both fingers step back". Draw the finger positions in chat too when explaining.
-4. **KISS code.** Interview-style Python, short variable names, a comment on every meaningful line. No optimizations, no tricks, no type-hint noise beyond basics.
-5. **Everything moves together on each Next click:** explanation text, finger pointers, grid cell, highlighted code line, live variable values.
-6. **One file, named after the problem**, e.g. `Longest Common Substring.html`, saved to `/mnt/agents/output/` and tagged with KIMI_REF.
-7. **User controls pace.** No auto-play; every step waits for a click.
-8. If the user is confused, ask "which step number breaks first" and re-explain only that step — never restart everything.
+1. Read the skeleton template: `skills/dsa-visual-teacher/templates/skeleton-3d-template.html`
+2. Read the working examples in the same directory for reference
+3. Fill in the `FILL IN` sections with your problem's data
+4. Save to the current directory with a descriptive name
 
-## Standard page structure (top to bottom)
+## Templates Included
 
-1. Title = problem name; subtitle "Click through slowly. Each phase is one small idea."
-2. Phase bar (buttons; active = blue, completed = green checkmark styling).
-3. Explanation box (min-height, plain English, `b` highlights in yellow, key rule in cyan).
-4. **Pointer-tracing panel**: each input sequence as a row of letter/number tiles; 👆 marker under the current index of each pointer; current tiles yellow, contributing tiles (e.g. current streak/window) green.
-5. **DP table / grid**: headers = sequence values; filled cells light up; current cell yellow glow, dependency cell(s) (diagonal/top/left) blue, max/answer cells green.
-6. **Code panel**: full solution shown from step 1; per step, the line(s) that "execute" get a yellow left border + background. Header shows `● ready` / `● running`.
-7. **Live variables panel**: small boxes for `i`, `j`, `dp[i][j]`, `best` (and problem-specific ones), updating every step.
-8. Answer box (big, green) once the answer is derivable.
-9. Controls (Back / Next / Replay phase) + "Phase X/Y — step a/b" indicator.
+| Template | When to use |
+|----------|------------|
+| `skeleton-3d-template.html` | **START HERE.** Annotated template with `FILL IN` markers. Adapt this for any new problem. |
+| `brute-force-recursion-tree-3d.html` | Reference: LCS brute force with 3D node cards. Shows recomputed nodes in red. |
+| `memoization-tree-grid-3d.html` | Reference: LCS memoization with 3D tree + 2D memo board + code panel. Shows memo HITs in green. |
+| `recursion-tree-2d.html` | Reference: Climbing Stairs brute force in 2D DOM. Simpler, no Three.js. |
+| `memoization-tree-2d.html` | Reference: Climbing Stairs memoization in 2D DOM. Shows saved recomputations. |
 
-## Standard phase arc (adapt to the problem)
+## Non-negotiables
 
-1. **The goal** — what the problem asks, with a tiny concrete example; why brute force is slow; DP = "notebook so we never re-check".
-2. **The grid/state idea** — what a cell MEANS, in one sentence ("streak ENDING here" / "best answer USING first i items"). Highlight the setup code lines (def, lengths, table init, best/answer var).
-3. **The one rule** — the recurrence, stated as at most 2 cases (match/extend vs reset/skip), each mapped to its exact code line. Explain why the dependency direction (diagonal/up/left) is just "how the problem shrinks".
-4. **Fill the table** — one cell per click. For every cell: which letters/values compared, which code line ran, what got written, live variables updated. This phase is the core; never compress it.
-5. **Read the answer** — where the answer lives in the table (max cell / last cell), how to reconstruct, final recap: 3–5 numbered takeaways + time/space complexity + "in an interview, this code is enough".
+1. **Start from the skeleton template.** Copy `skeleton-3d-template.html`, fill in the `FILL IN` markers.
+2. **Every step waits for a click.** No auto-play by default. Next/Back/Auto/Reset buttons.
+3. **Color coding is fixed and never changes:**
+   - YELLOW (#ffd54f) = current / active node or cell
+   - BLUE (#7c9af2) = dependency (what current reads from)
+   - GREEN (#69f0ae) = answer / match / optimal path
+   - RED (#ff5252) = wasted / recomputed / memo hit
+   - GRAY (#555) = base case / empty / inactive
+4. **Dark theme only** (`--bg: #080c12`). No light mode toggle.
+5. **Keyboard shortcuts:**  = next,  = prev, Space = auto/pause, R = reset.
+6. **Multiple examples:** Always provide at least 2 test cases via the dropdown.
+7. **Code panel shows the FULL algorithm from step 1.** The current line gets yellow highlight.
+8. **Live info panel** shows: step number, action type, human-readable explanation, current value.
+9. **Orbit controls** on the 3D view: drag to rotate, scroll to zoom, right-drag to pan.
 
-## Implementation guidance
+## The Standard Trace Structure
 
-- Start from `assets/template_dp_grid.html` (a complete working example: Longest Common Substring). Replace: input data, dp recurrence, explanation texts, per-step `trace` / `codeHl` / `vars` mappings, and the code listing with its line-number constants.
-- Build steps programmatically in JS (loop over cells, push step objects `{html, cells, current, diag, trace, codeHl, vars}`) — never hand-write 30 steps.
-- Keep color semantics fixed: **yellow = current**, **blue = dependency**, **green = answer/streak**, red emoji 🔴 = reset case, 🟢 = match/extend case.
-- Verify the finished file opens (no console errors) before delivering. Save the site to `/mnt/agents/output/app/` and call build_version (type `html`) for preview, AND copy the same file to `/mnt/agents/output/<Problem Title>.html` tagged with KIMI_REF.
+Each step in the trace array is:
 
-## In-chat teaching style (when explaining, not just building)
+```javascript
+{ line: <number>,        // code line number (0-based from CODE array)
+  nid: <nodeId>,         // which tree node is active (null for final step)
+  action: '<type>',      // see below
+  val: <number>,         // optional: computed value
+  desc: '<string>' }     // human explanation shown in info panel
+```
 
-- Short sentences. One idea per message block. Numbered sequences, not prose.
-- After each phase, ask the user to say back what they understood before moving on.
-- If asked "how did you know to use this approach": answer with the trigger chain — number of sequences → fingers → grid dimensions; "how does the problem shrink" → dependency direction; "can small answer build big answer — if not, make the state more specific".
-- Admit uncertainty; never fake a step.
+### Step Action Types
 
+| Action | Visual Effect | When to emit |
+|--------|--------------|-------------|
+| `enter` | Node card fades in | Starting a new recursive call |
+| `lookup` | Check animation | Looking up memo table |
+| `hit` | RED glow, "pulled from memory!" | Memo lookup succeeded |
+| `miss` | Dim flash, "not in memo" | Memo lookup failed, must compute |
+| `compare` | Compare highlight | Comparing two elements |
+| `recurse` | Arrow lights up to child | Making a recursive call |
+| `base` | GRAY card, "base case" | Hit a base case |
+| `branch` | Two arrows appear | Mismatch, trying both paths |
+| `store` | GREEN flash on memo cell | Writing value to memo/grid |
+| `return_val` | Value badge appears on card | Returning computed value |
+| `done` | Final answer highlight | All done, answer found |
+
+## Building the Tree
+
+For recursion-based algorithms, build a `Node` tree:
+
+```javascript
+class Node {
+  constructor() {
+    this.id = nextId++;           // unique integer
+    this.parent = null;           // parent Node
+    this.children = [];           // child Nodes (0 for base/hit, 1 for match, 2 for branch)
+    this.value = null;            // computed result
+    this.type = '';               // 'base', 'match', 'branch', 'hit'
+    this.onPath = false;          // true if this node contributes to the optimal answer
+
+    // Problem-specific data (attach whatever your problem needs):
+    this.data = {};               // e.g., { s1: 'abc', s2: 'ac', last1: 'c', last2: 'c' }
+  }
+}
+```
+
+**Key rule for `onPath`:** After computing all values, mark the path that leads to the optimal answer. For memoization, `hit` nodes are NOT on the optimal path (they shortcut).
+  - Match: the single child is on path
+  - Branch (mismatch): the child with the larger value is on path
+  - Memo hit: onPath = false (the original computation path is what matters)
+
+## Building the Trace
+
+The trace is generated by walking the tree depth-first:
+
+```
+function generateTrace(root):
+  trace = []
+
+  function walk(node):
+    trace.push({ enter node })
+    trace.push({ lookup memo })
+
+    if memo HIT:
+      trace.push({ hit, return from memo })  <-- RED glow
+      return
+
+    trace.push({ memo MISS, must compute })
+
+    if base case:
+      trace.push({ base case, return 0 })
+      trace.push({ store in memo })
+      return
+
+    trace.push({ compare last characters/elements })
+
+    if match:
+      trace.push({ recurse to child })
+      walk(child)
+      trace.push({ store result in memo })
+    else (branch):
+      trace.push({ recurse to child 1 (skip from s1) })
+      walk(child1)
+      trace.push({ recurse to child 2 (skip from s2) })
+      walk(child2)
+      trace.push({ store max result in memo })
+
+    trace.push({ return computed value })
+
+  walk(root)
+  trace.push({ done, final answer })
+  return trace
+```
+
+## For Tabulation/DP Table Visualizations
+
+Instead of a 3D tree, render a 2D grid/table:
+
+- Each cell = one subproblem answer
+- Current cell = YELLOW glow
+- Dependency cells = BLUE (the cells current reads from — diagonal, up, left)
+- Answer cell = GREEN
+- Fill order: left to right, top to bottom
+- Show arrows from dependency cells to current cell
+- Live variables panel: i, j, dp[i][j], best
+
+Build the trace as a flat array of cell-filling steps (no recursion tree needed).
+
+## Deliverables
+
+1. One `.html` file per approach stage (brute force, memoization, tabulation)
+2. Named: `<problem>-<stage>-3d.html` (e.g., `climb-stairs-brute-force-3d.html`)
+3. Saved to the current working directory
+4. Test by opening in browser — no console errors, all examples work
