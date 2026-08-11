@@ -45,13 +45,9 @@ for right in range(len(arr)):
     result = max(result, right - left + 1)
 ```
 
+
 ## Visualization Data
-For a sliding window viz, show:
-- The array as a row of number tiles
-- Two pointers (left in blue, right in yellow) with arrows
-- The current window highlighted
-- A "sum" display that updates as elements enter/leave
-- An "answer" display tracking the best window found
+Use `array-pointers.html` template. Show array. L and R moving same direction. Window highlighted green. Window state (sum/count) updates as elements enter/leave. Answer tracker showing best window found. Live vars: left, right, window_state, constraint, answer.
 
 ## Example Problems (in teaching order)
 1. **Maximum Sum Subarray of Size K** (fixed window) — easiest intro

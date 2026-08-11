@@ -40,13 +40,9 @@ while left < right:
     else: right -= 1                   # need smaller
 ```
 
+
 ## Visualization Data
-For two-pointers viz, show:
-- The sorted array as a row of tiles
-- Left pointer (blue arrow from above), Right pointer (red arrow from above)
-- The current sum displayed between them
-- Arrows showing which pointer moves and why
-- A counter: "pairs skipped: X" to show the work avoided
+Use `array-pointers.html` template. Show sorted array. L and R pointers converging from ends. Current sum displayed. Arrow showing which pointer moves and why. Counter: "pairs skipped: X". Live vars: left, right, arr[left], arr[right], current_sum, target.
 
 ## Example Problems
 1. **Two Sum II** (sorted) — classic converging pointers

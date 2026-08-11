@@ -24,14 +24,9 @@ Exploring a cave system with a rope tied at the entrance. You follow one tunnel 
 - **In-order**: Process left child, then node, then right child (sorted for BST)
 - **Post-order**: Process children, then node (children first — for cleanup/computation that needs child results)
 
+
 ## Visualization Data
-For DFS viz, show:
-- 3D tree or graph with nodes as spheres
-- Current path highlighted in yellow (the "rope")
-- Visited nodes in gray, unvisited in blue
-- Backtracking shown as the yellow path SHRINKING back
-- Call stack displayed on the side
-- For backtracking problems: candidate solutions being built/destroyed in real-time
+Use `graph-traversal.html` template (rename queue to stack, change to LIFO). Current path highlighted in yellow. Call stack shown on side. Backtracking = yellow path shrinks. Visited nodes green. Live vars: current node, stack depth, visited count.
 
 ## Example Problems
 1. **Maximum Depth of Binary Tree** — DFS post-order

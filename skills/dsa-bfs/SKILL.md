@@ -24,14 +24,9 @@ BFS uses a queue (FIFO = first in, first out). This guarantees level order:
 - Dequeue node → enqueue all its unvisited neighbors
 - Neighbors are processed in the order they were discovered = exactly level by level
 
+
 ## Visualization Data
-For BFS viz, show:
-- A 3D grid or graph with nodes as spheres
-- Starting node in green, target in gold, walls in dark gray
-- RINGS of color radiating outward (each BFS level a different shade)
-- The queue displayed as a 3D row of waiting nodes
-- Current node in yellow, visited nodes faded
-- Step counter showing: "distance from start: X"
+Use `graph-traversal.html` template. 3D or 2D graph with nodes as circles. Queue panel showing FIFO order. Nodes colored: yellow=current, blue=queued, green=visited, gray=unvisited. Edges highlighted yellow when examined. Distance counter. Live vars: current node, neighbor, queue size, visited count.
 
 ## Example Problems
 1. **Binary Tree Level Order** — classic BFS on a tree

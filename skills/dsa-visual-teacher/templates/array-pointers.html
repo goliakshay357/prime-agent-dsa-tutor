@@ -1,0 +1,287 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Array Pointer Viz — Binary Search / Two Pointers / Sliding Window</title>
+<style>
+:root{--bg:#080c12;--surface:#111820;--surface2:#1a2430;--text:#dde4ec;--muted:#6b7d90;--accent:#7c9af2;--gold:#ffd54f;--green:#69f0ae;--red:#ff5252;--font:system-ui,sans-serif;--mono:'SF Mono',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px}
+h1{margin-bottom:4px;font-size:1.3rem}
+.sub{color:var(--muted);font-size:0.85rem;margin-bottom:16px}
+#array{display:flex;gap:2px;margin:20px 0;position:relative;justify-content:center;flex-wrap:wrap}
+.tile{width:52px;height:52px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-weight:700;font-size:0.95rem;font-family:var(--mono);background:var(--surface2);border:2px solid transparent;transition:all .25s;position:relative}
+.tile.active{border-color:var(--gold);background:#2a3a20;box-shadow:0 0 12px #ffd54f44;z-index:2}
+.tile.left{border-color:var(--accent);box-shadow:0 0 8px #7c9af244}
+.tile.right{border-color:var(--red);box-shadow:0 0 8px #ff525244}
+.tile.in-window{background:#1a3a2a;border-color:#69f0ae44}
+.tile.eliminated{opacity:.2;text-decoration:line-through}
+.tile.dependency{background:#1a2a40;border-color:#7c9af244}
+.pointer{position:absolute;font-size:0.7rem;font-weight:700;padding:1px 6px;border-radius:4px;white-space:nowrap;transform:translateX(-50%);z-index:3}
+.pointer.left-p{background:var(--accent);color:#fff;top:-22px}
+.pointer.right-p{background:var(--red);color:#fff;top:-22px}
+.pointer.mid-p{background:var(--gold);color:#000;top:-22px}
+#info{background:var(--surface);border-radius:12px;padding:14px 18px;margin:16px 0;max-width:650px;width:100%;min-height:60px;font-size:0.95rem;line-height:1.5}
+#info .highlight{color:var(--gold);font-weight:700}
+#vars{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin:8px 0}
+.var-box{background:var(--surface);border-radius:8px;padding:8px 14px;text-align:center;min-width:70px}
+.var-box .val{font-family:var(--mono);font-size:1.2rem;font-weight:700;color:var(--gold)}
+.var-box .lbl{font-size:0.7rem;color:var(--muted);text-transform:uppercase}
+.ctrls{display:flex;gap:8px;align-items:center;margin:12px 0}
+button,select{font-family:var(--font);font-size:0.85rem;font-weight:600;padding:8px 14px;border-radius:8px;border:none;cursor:pointer;background:var(--surface2);color:var(--text);transition:background .15s}
+button.pri{background:var(--accent);color:#fff;font-size:1rem;padding:8px 20px}
+button:disabled{opacity:.3;pointer-events:none}
+#step-num{font-size:0.8rem;color:var(--muted);font-family:var(--mono);min-width:50px;text-align:center}
+#code{background:var(--surface);border-radius:10px;padding:10px 14px;font-family:var(--mono);font-size:0.8rem;max-width:650px;width:100%;line-height:1.7;overflow-x:auto}
+#code .ln{display:flex;padding:1px 6px;border-radius:4px;transition:background .15s}
+#code .ln .n{color:var(--muted);width:20px;text-align:right;margin-right:10px;user-select:none}
+#code .ln.hi{background:var(--accent);color:#fff}
+#code .ln.hi .n{color:#fffc}
+.legend{display:flex;gap:12px;font-size:0.75rem;color:var(--muted);margin-top:8px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
+</style>
+
+<h1><!-- PROBLEM_NAME --></h1>
+<div class="sub"><!-- STAGE_DESCRIPTION --></div>
+
+<div id="array"></div>
+<div id="vars"></div>
+<div id="info">Press <span class="highlight">Next</span> to begin.</div>
+
+<div class="ctrls">
+  <button id="b-prev"></button>
+  <span id="step-num">/</span>
+  <button id="b-next" class="pri"> Next</button>
+  <button id="b-auto"> Auto</button>
+  <button id="b-reset"></button>
+  <select id="ex-sel"></select>
+  <label style="font-size:10px;color:var(--muted)"><input id="speed-v" type="range" min="1" max="5" value="3"></label>
+</div>
+
+<div id="code"></div>
+
+<div class="legend">
+  <span><span class="dot" style="background:var(--gold)"></span> current</span>
+  <span><span class="dot" style="background:var(--accent)"></span> left/boundary</span>
+  <span><span class="dot" style="background:var(--red)"></span> right/boundary</span>
+  <span><span class="dot" style="background:#1a3a2a;border:2px solid #69f0ae44;border-radius:2px"></span> in window</span>
+  <span><span class="dot" style="background:var(--surface2)"></span> eliminated</span>
+</div>
+
+<script>
+// ======= FILL IN: Problem data =======
+const EXAMPLES = [
+  { name: 'Example 1', data: [1,3,5,7,9,11,13], target: 7 },
+  { name: 'Example 2', data: [2,4,6,8,10,12], target: 5 },
+];
+
+const CODE = [
+  'def solve(arr, target):',
+  '    left, right = 0, len(arr) - 1',
+  '    while left <= right:',
+  '        mid = left + (right - left) // 2',
+  '        if arr[mid] == target:',
+  '            return mid',
+  '        elif arr[mid] < target:',
+  '            left = mid + 1',
+  '        else:',
+  '            right = mid - 1',
+  '    return -1',
+];
+
+// ======= FILL IN: Generate steps =======
+// Each step: { line: <code line num>, left: <left idx>, right: <right idx>,
+//              mid: <mid idx or null>, window: [start,end] or null,
+//              eliminated: [start,end] or null, action: '<type>',
+//              vars: { name: value }, desc: '<explanation>' }
+//
+// Action types:
+//   'init'       - initial state, show array
+//   'pick_mid'   - highlight mid element (yellow)
+//   'compare'    - show comparison result
+//   'move_left'  - left pointer moves right (eliminate left half)
+//   'move_right' - right pointer moves left (eliminate right half)
+//   'found'      - answer found (green glow)
+//   'not_found'  - search exhausted
+
+function generateSteps(data, target) {
+  const steps = [];
+  let left = 0, right = data.length - 1;
+
+  steps.push({ line: 1, left, right, mid: null, eliminated: null,
+    vars: { left, right }, action: 'init',
+    desc: 'Starting binary search. Array has ' + data.length + ' elements. Target = ' + target });
+
+  steps.push({ line: 2, left, right, mid: null, eliminated: null,
+    vars: { left, right }, action: 'init',
+    desc: 'Set left=0, right=' + (data.length - 1) + '. Search space: entire array.' });
+
+  while (left <= right) {
+    const mid = left + Math.floor((right - left) / 2);
+    steps.push({ line: 3, left, right, mid, eliminated: null,
+      vars: { left, right, mid },
+      action: 'pick_mid',
+      desc: 'mid = left + (right - left) // 2 = ' + left + ' + (' + right + ' - ' + left + ') // 2 = ' + mid + '. Check arr[' + mid + '] = ' + data[mid] });
+
+    steps.push({ line: 4, left, right, mid, eliminated: null,
+      vars: { left, right, mid, 'arr[mid]': data[mid], target },
+      action: 'compare',
+      desc: 'Compare: arr[' + mid + '] = ' + data[mid] + ' vs target = ' + target });
+
+    if (data[mid] === target) {
+      steps.push({ line: 5, left, right, mid, eliminated: null,
+        vars: { result: mid }, action: 'found',
+        desc: ' MATCH! arr[' + mid + '] == ' + target + '. Answer found at index ' + mid + '.' });
+      return steps;
+    } else if (data[mid] < target) {
+      const oldLeft = left;
+      left = mid + 1;
+      steps.push({ line: 7, left, right, mid, eliminated: [oldLeft, mid],
+        vars: { left, right, mid },
+        action: 'move_left',
+        desc: 'arr[' + mid + '] = ' + data[mid] + ' < ' + target + '. Target must be in RIGHT half. Eliminate indices ' + oldLeft + ' to ' + mid + '. New left = ' + left + '.' });
+    } else {
+      const oldRight = right;
+      right = mid - 1;
+      steps.push({ line: 9, left, right, mid, eliminated: [mid, oldRight],
+        vars: { left, right, mid },
+        action: 'move_right',
+        desc: 'arr[' + mid + '] = ' + data[mid] + ' > ' + target + '. Target must be in LEFT half. Eliminate indices ' + mid + ' to ' + oldRight + '. New right = ' + right + '.' });
+    }
+  }
+
+  steps.push({ line: 10, left, right, mid: null, eliminated: null,
+    vars: { result: -1 }, action: 'not_found',
+    desc: ' left > right (' + left + ' > ' + right + '). Search space empty. Target ' + target + ' not in array.' });
+  return steps;
+}
+
+// ======= RENDERING (modify tile rendering for your data type) =======
+const arrEl = document.getElementById('array');
+const varsEl = document.getElementById('vars');
+const infoEl = document.getElementById('info');
+const codeEl = document.getElementById('code');
+
+function buildCodePanel() {
+  codeEl.innerHTML = CODE.map((line, i) =>
+    `<div class="ln" id="cl-${i+1}"><span class="n">${i+1}</span>${line}</div>`
+  ).join('');
+}
+
+function renderArray(data, step, allSteps, stepIdx) {
+  arrEl.innerHTML = '';
+
+  // Compute which indices are eliminated up to this step
+  const elim = new Set();
+  for (let i = 0; i <= stepIdx; i++) {
+    const s = allSteps[i];
+    if (s.eliminated) {
+      for (let j = s.eliminated[0]; j <= s.eliminated[1]; j++) elim.add(j);
+    }
+  }
+
+  data.forEach((val, i) => {
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    tile.textContent = val;
+
+    if (step.mid === i) tile.classList.add('active');
+    if (step.left === i) tile.classList.add('left');
+    if (step.right === i && step.right !== step.left) tile.classList.add('right');
+    if (step.window && i >= step.window[0] && i <= step.window[1]) tile.classList.add('in-window');
+    if (elim.has(i)) tile.classList.add('eliminated');
+
+    arrEl.appendChild(tile);
+  });
+
+  // Pointer labels
+  if (step.left != null && step.left < data.length) addPointer(step.left, 'L=' + step.left, 'left-p');
+  if (step.right != null && step.right < data.length) addPointer(step.right, 'R=' + step.right, 'right-p');
+  if (step.mid != null && step.mid < data.length) addPointer(step.mid, 'mid=' + step.mid, 'mid-p');
+}
+
+function addPointer(idx, label, cls) {
+  const tiles = arrEl.querySelectorAll('.tile');
+  if (idx >= tiles.length) return;
+  const tile = tiles[idx];
+  const ptr = document.createElement('div');
+  ptr.className = 'pointer ' + cls;
+  ptr.textContent = label;
+  // Position near top of tile but offset so multiple pointers don't overlap
+  const existing = tile.querySelectorAll('.pointer').length;
+  ptr.style.top = (-22 - existing * 14) + 'px';
+  tile.appendChild(ptr);
+}
+
+function renderVars(step) {
+  if (!step.vars) { varsEl.innerHTML = ''; return; }
+  varsEl.innerHTML = Object.entries(step.vars).map(([k, v]) =>
+    `<div class="var-box"><div class="val">${v}</div><div class="lbl">${k}</div></div>`
+  ).join('');
+}
+
+function highlightCode(line) {
+  codeEl.querySelectorAll('.ln.hi').forEach(el => el.classList.remove('hi'));
+  if (line > 0) {
+    const el = document.getElementById('cl-' + line);
+    if (el) el.classList.add('hi');
+  }
+}
+
+// ======= CONTROLS =======
+let exIdx = 0, data = EXAMPLES[0].data, target = EXAMPLES[0].target;
+let steps = [], stepIdx = -1, autoTimer = null;
+
+function renderCurrent() {
+  if (stepIdx < 0 || stepIdx >= steps.length) return;
+  const step = steps[stepIdx];
+  renderArray(data, step, steps, stepIdx);
+  renderVars(step);
+  highlightCode(step.line);
+  infoEl.innerHTML = step.desc;
+  document.getElementById('step-num').textContent = (stepIdx + 1) + '/' + steps.length;
+  document.getElementById('b-next').disabled = stepIdx >= steps.length - 1;
+  document.getElementById('b-prev').disabled = stepIdx <= 0;
+}
+
+function goNext() { if (stepIdx < steps.length - 1) { stepIdx++; renderCurrent(); } }
+function goPrev() { if (stepIdx > 0) { stepIdx--; renderCurrent(); } }
+function goReset() { stepIdx = -1; stopAuto(); goNext(); }
+
+function startAuto() {
+  if (autoTimer) return;
+  const delays = [700,400,220,120,60];
+  const d = delays[Math.min(4, Math.max(0, (document.getElementById('speed-v').value||3)-1))];
+  document.getElementById('b-auto').textContent = ' Pause';
+  function tick(){ if(stepIdx>=steps.length-1){stopAuto();return;} goNext(); autoTimer=setTimeout(tick,d); }
+  autoTimer=setTimeout(tick,d);
+}
+function stopAuto(){ if(autoTimer){clearTimeout(autoTimer);autoTimer=null;} document.getElementById('b-auto').textContent=' Auto'; }
+
+function loadEx(i) {
+  exIdx = i; data = EXAMPLES[i].data; target = EXAMPLES[i].target;
+  steps = generateSteps(data, target);
+  buildCodePanel();
+  stepIdx = -1; stopAuto(); goNext();
+}
+
+// Init
+const sel = document.getElementById('ex-sel');
+EXAMPLES.forEach((ex, i) => { const o = document.createElement('option'); o.value = i; o.textContent = ex.name; sel.appendChild(o); });
+sel.addEventListener('change', e => loadEx(parseInt(e.target.value)));
+
+document.getElementById('b-next').addEventListener('click', goNext);
+document.getElementById('b-prev').addEventListener('click', goPrev);
+document.getElementById('b-reset').addEventListener('click', goReset);
+document.getElementById('b-auto').addEventListener('click', () => autoTimer ? stopAuto() : startAuto());
+document.getElementById('speed-v').addEventListener('input', () => { if(autoTimer){stopAuto();startAuto();} });
+
+window.addEventListener('keydown', e => {
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  if(e.key==='ArrowRight'){e.preventDefault();goNext();}
+  if(e.key==='ArrowLeft'){e.preventDefault();goPrev();}
+  if(e.key===' '){e.preventDefault();autoTimer?stopAuto():startAuto();}
+  if(e.key==='r'||e.key==='R'){if(!e.metaKey){e.preventDefault();goReset();}}
+});
+
+loadEx(0);
+</script>

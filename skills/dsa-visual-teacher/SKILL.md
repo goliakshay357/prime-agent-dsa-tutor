@@ -1,159 +1,80 @@
 ---
 name: dsa-visual-teacher
-description: 'Teach a DSA/DP/algorithm problem through an interactive, self-contained HTML walkthrough with 3D visualizations. Use when explaining any algorithm step-by-step.'
+description: 'Build interactive HTML walkthroughs for ANY algorithm — recursion trees, arrays, graphs, DP tables. Pick the template that matches your data structure.'
 ---
 
 # DSA Visual Teacher
 
-Teach algorithm problems by building ONE self-contained interactive HTML page. No frameworks, no CDNs beyond Three.js import map, no external files — inline CSS + vanilla JS only. Works offline by double-clicking.
+Build ONE self-contained HTML page per algorithm stage. No frameworks. Three.js for 3D where needed, vanilla canvas/DOM for everything else. Works offline by double-click.
 
-## Quick Start
+## Template Catalog — Pick by Data Structure
 
-1. Read the skeleton template: `skills/dsa-visual-teacher/templates/skeleton-3d-template.html`
-2. Read the working examples in the same directory for reference
-3. Fill in the `FILL IN` sections with your problem's data
-4. Save to the current directory with a descriptive name
+| Your algorithm operates on... | Use this template |
+|------------------------------|-------------------|
+| Recursive calls (DP, backtracking, divide & conquer) | `skeleton-3d-template.html` or `brute-force-recursion-tree-3d.html` |
+| Array with pointers (binary search, two pointers, sliding window, partition) | `array-pointers.html` |
+| Graph (BFS, DFS, Dijkstra, topological sort) | `graph-traversal.html` |
+| 2D Table/Grid (DP tabulation, matrix traversal) | `memoization-tree-grid-3d.html` (adapt: replace tree with grid) |
+| Sorting (bubble, merge, quick, heap) | Adapt `array-pointers.html` — add swap animation |
 
-## Templates Included
+All templates are in `skills/dsa-visual-teacher/templates/`.
 
-| Template | When to use |
-|----------|------------|
-| `skeleton-3d-template.html` | **START HERE.** Annotated template with `FILL IN` markers. Adapt this for any new problem. |
-| `brute-force-recursion-tree-3d.html` | Reference: LCS brute force with 3D node cards. Shows recomputed nodes in red. |
-| `memoization-tree-grid-3d.html` | Reference: LCS memoization with 3D tree + 2D memo board + code panel. Shows memo HITs in green. |
-| `recursion-tree-2d.html` | Reference: Climbing Stairs brute force in 2D DOM. Simpler, no Three.js. |
-| `memoization-tree-2d.html` | Reference: Climbing Stairs memoization in 2D DOM. Shows saved recomputations. |
+## Template Quick Reference
 
-## Non-negotiables
+### `array-pointers.html`
+Shows array as tile row. Pointers (L, R, mid) as colored labels above tiles. Eliminated tiles fade out. Window tiles get green border. Code panel + live variables.
 
-1. **Start from the skeleton template.** Copy `skeleton-3d-template.html`, fill in the `FILL IN` markers.
-2. **Every step waits for a click.** No auto-play by default. Next/Back/Auto/Reset buttons.
-3. **Color coding is fixed and never changes:**
-   - YELLOW (#ffd54f) = current / active node or cell
-   - BLUE (#7c9af2) = dependency (what current reads from)
-   - GREEN (#69f0ae) = answer / match / optimal path
+**Adapt for:**
+- **Binary search**: steps show mid pick, comparison, half elimination
+- **Two pointers**: L and R converge, show sum/comparison
+- **Sliding window**: L and R move same direction, window sum updates
+- **Partition/quicksort**: pivot + partition boundaries
+
+**Key step fields:** `{ line, left, right, mid, window: [s,e], eliminated: [s,e], action, vars, desc }`
+
+### `graph-traversal.html`
+Canvas-rendered graph with nodes as circles, edges as lines. Queue/stack panel shows waiting nodes. Code panel + live variables.
+
+**Adapt for:**
+- **BFS**: queue panel, rings of visited nodes
+- **DFS**: stack panel, current path highlighted
+- **Dijkstra**: add distance labels on nodes, priority queue
+- **Topological sort**: add in-degree counters
+
+**Key step fields:** `{ line, node, action, queueContents, visitedSet, vars, desc }`
+
+### `skeleton-3d-template.html`
+Three.js 3D scene with node cards connected by edges. Orbit controls. Code panel + info panel.
+
+**Adapt for:**
+- **Recursive DP**: show call tree, highlight recomputed nodes (red), memo hits (green)
+- **Backtracking**: show state tree, prune dead branches
+- **Divide & conquer**: show merge tree, subproblem results
+
+**Key step fields:** `{ line, nid, action, val, desc }` — same as existing template
+
+### `memoization-tree-grid-3d.html`
+Full reference: LCS memoization with 3D tree + 2D memo board + code panel. Study this for the memo-grid pattern.
+
+## Non-negotiables (all templates)
+
+1. **Every step waits for a click.** Next/Back/Auto/Reset buttons always present.
+2. **Fixed color coding:**
+   - YELLOW (#ffd54f) = current/active
+   - BLUE (#7c9af2) = dependency / queued / boundary
+   - GREEN (#69f0ae) = answer / match / visited / optimal
    - RED (#ff5252) = wasted / recomputed / memo hit
-   - GRAY (#555) = base case / empty / inactive
-4. **Dark theme only** (`--bg: #080c12`). No light mode toggle.
-5. **Keyboard shortcuts:**  = next,  = prev, Space = auto/pause, R = reset.
-6. **Multiple examples:** Always provide at least 2 test cases via the dropdown.
-7. **Code panel shows the FULL algorithm from step 1.** The current line gets yellow highlight.
-8. **Live info panel** shows: step number, action type, human-readable explanation, current value.
-9. **Orbit controls** on the 3D view: drag to rotate, scroll to zoom, right-drag to pan.
-
-## The Standard Trace Structure
-
-Each step in the trace array is:
-
-```javascript
-{ line: <number>,        // code line number (0-based from CODE array)
-  nid: <nodeId>,         // which tree node is active (null for final step)
-  action: '<type>',      // see below
-  val: <number>,         // optional: computed value
-  desc: '<string>' }     // human explanation shown in info panel
-```
-
-### Step Action Types
-
-| Action | Visual Effect | When to emit |
-|--------|--------------|-------------|
-| `enter` | Node card fades in | Starting a new recursive call |
-| `lookup` | Check animation | Looking up memo table |
-| `hit` | RED glow, "pulled from memory!" | Memo lookup succeeded |
-| `miss` | Dim flash, "not in memo" | Memo lookup failed, must compute |
-| `compare` | Compare highlight | Comparing two elements |
-| `recurse` | Arrow lights up to child | Making a recursive call |
-| `base` | GRAY card, "base case" | Hit a base case |
-| `branch` | Two arrows appear | Mismatch, trying both paths |
-| `store` | GREEN flash on memo cell | Writing value to memo/grid |
-| `return_val` | Value badge appears on card | Returning computed value |
-| `done` | Final answer highlight | All done, answer found |
-
-## Building the Tree
-
-For recursion-based algorithms, build a `Node` tree:
-
-```javascript
-class Node {
-  constructor() {
-    this.id = nextId++;           // unique integer
-    this.parent = null;           // parent Node
-    this.children = [];           // child Nodes (0 for base/hit, 1 for match, 2 for branch)
-    this.value = null;            // computed result
-    this.type = '';               // 'base', 'match', 'branch', 'hit'
-    this.onPath = false;          // true if this node contributes to the optimal answer
-
-    // Problem-specific data (attach whatever your problem needs):
-    this.data = {};               // e.g., { s1: 'abc', s2: 'ac', last1: 'c', last2: 'c' }
-  }
-}
-```
-
-**Key rule for `onPath`:** After computing all values, mark the path that leads to the optimal answer. For memoization, `hit` nodes are NOT on the optimal path (they shortcut).
-  - Match: the single child is on path
-  - Branch (mismatch): the child with the larger value is on path
-  - Memo hit: onPath = false (the original computation path is what matters)
-
-## Building the Trace
-
-The trace is generated by walking the tree depth-first:
-
-```
-function generateTrace(root):
-  trace = []
-
-  function walk(node):
-    trace.push({ enter node })
-    trace.push({ lookup memo })
-
-    if memo HIT:
-      trace.push({ hit, return from memo })  <-- RED glow
-      return
-
-    trace.push({ memo MISS, must compute })
-
-    if base case:
-      trace.push({ base case, return 0 })
-      trace.push({ store in memo })
-      return
-
-    trace.push({ compare last characters/elements })
-
-    if match:
-      trace.push({ recurse to child })
-      walk(child)
-      trace.push({ store result in memo })
-    else (branch):
-      trace.push({ recurse to child 1 (skip from s1) })
-      walk(child1)
-      trace.push({ recurse to child 2 (skip from s2) })
-      walk(child2)
-      trace.push({ store max result in memo })
-
-    trace.push({ return computed value })
-
-  walk(root)
-  trace.push({ done, final answer })
-  return trace
-```
-
-## For Tabulation/DP Table Visualizations
-
-Instead of a 3D tree, render a 2D grid/table:
-
-- Each cell = one subproblem answer
-- Current cell = YELLOW glow
-- Dependency cells = BLUE (the cells current reads from — diagonal, up, left)
-- Answer cell = GREEN
-- Fill order: left to right, top to bottom
-- Show arrows from dependency cells to current cell
-- Live variables panel: i, j, dp[i][j], best
-
-Build the trace as a flat array of cell-filling steps (no recursion tree needed).
+   - GRAY (#555) = base case / eliminated / inactive
+3. **Dark theme** (`--bg: #080c12`). Consistent.
+4. **Keyboard:**  = next,  = prev, Space = auto, R = reset.
+5. **Multiple examples** in dropdown.
+6. **Code panel** shows full algorithm from step 1. Current line highlighted.
+7. **Live variables** panel updates every step.
+8. **Human-readable description** per step — no raw variable dumps.
 
 ## Deliverables
 
-1. One `.html` file per approach stage (brute force, memoization, tabulation)
-2. Named: `<problem>-<stage>-3d.html` (e.g., `climb-stairs-brute-force-3d.html`)
-3. Saved to the current working directory
-4. Test by opening in browser — no console errors, all examples work
+- One `.html` per approach stage: `<problem>-brute-force-3d.html`, `<problem>-memo-3d.html`, `<problem>-tabulation-3d.html`
+- For non-DP: `<problem>-<algorithm>.html` (e.g., `binary-search.html`, `bfs-grid.html`)
+- Save to current working directory
+- Test: opens without console errors, all examples work

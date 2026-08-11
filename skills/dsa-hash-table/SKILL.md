@@ -25,14 +25,9 @@ The classic: "For each element x, check if (target - x) has been seen before."
 Without hash table: scan array for each element = O(n²).
 With hash table: one lookup per element = O(n).
 
+
 ## Visualization Data
-For hash table viz, show:
-- The array being scanned left to right
-- A 3D "wall of lockers" (the hash table) growing as elements are added
-- Current array element highlighted
-- An arrow from the element to its complement lookup in the table
-- Hit: locker glows green. Miss: new locker slides in.
-- Counter: "lookups: X, hits: Y"
+Show array being scanned left to right. "Wall of lockers" (hash table) growing as elements are added. Arrow from current element to complement lookup. Hit = locker glows green. Miss = new locker slides in. Counter: "lookups: X, hits: Y". Adapt `array-pointers.html` style — replace pointers with hash table visualization.
 
 ## Example Problems
 1. **Two Sum** — complement lookup

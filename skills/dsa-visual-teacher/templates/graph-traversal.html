@@ -1,0 +1,301 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Graph Traversal Viz — BFS / DFS</title>
+<style>
+:root{--bg:#080c12;--surface:#111820;--surface2:#1a2430;--text:#dde4ec;--muted:#6b7d90;--accent:#7c9af2;--gold:#ffd54f;--green:#69f0ae;--red:#ff5252;--font:system-ui,sans-serif;--mono:'SF Mono',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--font);height:100vh;overflow:hidden}
+#app{display:flex;height:100%}
+#canvas-wrap{flex:1;position:relative}
+canvas{display:block}
+#side{width:360px;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--surface2);overflow-y:auto}
+#info{padding:12px;min-height:60px;font-size:0.9rem;line-height:1.5;border-bottom:1px solid var(--surface2)}
+#info .highlight{color:var(--gold);font-weight:700}
+#queue-box{padding:10px 12px;border-bottom:1px solid var(--surface2)}
+#queue-box .lbl{font-size:0.7rem;color:var(--muted);text-transform:uppercase;margin-bottom:4px}
+#queue{display:flex;gap:4px;flex-wrap:wrap;min-height:36px}
+.queue-item{background:var(--accent);color:#fff;padding:4px 10px;border-radius:6px;font-weight:700;font-family:var(--mono);font-size:0.85rem;transition:all .2s}
+.queue-item.next{background:var(--gold);color:#000;box-shadow:0 0 8px #ffd54f44}
+#vars{padding:8px 12px;border-bottom:1px solid var(--surface2);display:flex;gap:12px;flex-wrap:wrap}
+.var-box{background:var(--surface2);border-radius:6px;padding:6px 10px;text-align:center;min-width:50px}
+.var-box .val{font-family:var(--mono);font-size:1rem;font-weight:700;color:var(--gold)}
+.var-box .lbl{font-size:0.65rem;color:var(--muted);text-transform:uppercase}
+#code-panel{padding:8px 10px;font-family:var(--mono);font-size:0.75rem;line-height:1.7;border-bottom:1px solid var(--surface2)}
+#code-panel .ln{display:flex;padding:1px 6px;border-radius:3px;transition:background .15s}
+#code-panel .ln .n{color:var(--muted);width:18px;text-align:right;margin-right:8px;user-select:none}
+#code-panel .ln.hi{background:var(--accent);color:#fff}
+.ctrls{display:flex;gap:5px;padding:8px 10px;align-items:center;flex-wrap:wrap}
+button,select{font-family:var(--font);font-size:0.8rem;font-weight:600;padding:6px 12px;border-radius:7px;border:none;cursor:pointer;background:var(--surface2);color:var(--text)}
+button.pri{background:var(--accent);color:#fff;font-size:0.9rem;padding:7px 16px}
+button:disabled{opacity:.3}
+#step-num{font-size:0.75rem;color:var(--muted);font-family:var(--mono);min-width:45px;text-align:center}
+.legend{display:flex;gap:10px;font-size:0.7rem;color:var(--muted);padding:6px 10px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:3px;vertical-align:middle}
+</style>
+
+<div id="app">
+  <div id="canvas-wrap"><canvas id="c"></canvas></div>
+  <div id="side">
+    <div id="info">Press <span class="highlight">Next</span> to begin.</div>
+    <div id="queue-box"><div class="lbl">Queue / Stack</div><div id="queue"></div></div>
+    <div id="vars"></div>
+    <div id="code-panel"></div>
+    <div class="ctrls">
+      <button id="b-prev"></button>
+      <span id="step-num">/</span>
+      <button id="b-next" class="pri"> Next</button>
+      <button id="b-auto"> Auto</button>
+      <button id="b-reset"></button>
+      <select id="ex-sel"></select>
+      <label style="font-size:9px;color:var(--muted)"><input id="speed-v" type="range" min="1" max="5" value="3"></label>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--gold)"></span> current</span>
+      <span><span class="dot" style="background:var(--accent)"></span> queued</span>
+      <span><span class="dot" style="background:var(--green)"></span> visited</span>
+      <span><span class="dot" style="background:var(--surface2)"></span> unvisited</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ======= FILL IN: Graph data =======
+// Nodes: { id: <char>, x: <number 0-1>, y: <number 0-1> }
+// Edges: [fromId, toId] or [fromId, toId, weight]
+const EXAMPLES = [
+  {
+    name: 'Small graph',
+    nodes: [{id:'A',x:.2,y:.3},{id:'B',x:.5,y:.1},{id:'C',x:.8,y:.3},{id:'D',x:.5,y:.6},{id:'E',x:.2,y:.7},{id:'F',x:.8,y:.7}],
+    edges: [['A','B'],['A','D'],['B','C'],['B','D'],['C','F'],['D','E'],['E','F']],
+    start: 'A'
+  }
+];
+
+const CODE = [
+  'def bfs(graph, start):',
+  '    queue = deque([start])',
+  '    visited = {start}',
+  '    while queue:',
+  '        node = queue.popleft()',
+  '        for neighbor in graph[node]:',
+  '            if neighbor not in visited:',
+  '                visited.add(neighbor)',
+  '                queue.append(neighbor)',
+];
+
+// ======= FILL IN: Generate BFS/DFS steps =======
+// Each step: { line, node, action, queueContents, visitedSet, vars, desc }
+// Actions: 'start', 'dequeue', 'examine_edge', 'enqueue', 'skip_visited', 'done'
+
+function generateSteps(graph, startId) {
+  const steps = [];
+  const queue = [startId];
+  const visited = new Set([startId]);
+  const adj = {};
+  graph.nodes.forEach(n => adj[n.id] = []);
+  graph.edges.forEach(([a,b]) => { adj[a].push(b); adj[b].push(a); });
+
+  steps.push({ line: 1, node: null, action: 'start', queueContents: [...queue], visitedSet: new Set(visited),
+    vars: {}, desc: 'BFS from node ' + startId + '. Queue initialized with start node.' });
+
+  steps.push({ line: 2, node: null, action: 'start', queueContents: [...queue], visitedSet: new Set(visited),
+    vars: {}, desc: 'visited = {' + startId + '}. Start node marked as visited.' });
+
+  while (queue.length > 0) {
+    const node = queue.shift();
+    steps.push({ line: 4, node, action: 'dequeue', queueContents: [...queue], visitedSet: new Set(visited),
+      vars: { current: node }, desc: 'Dequeue ' + node + '. Processing node ' + node + ' (distance from start = ' + (visited.size) + ').' });
+
+    for (const neighbor of adj[node]) {
+      steps.push({ line: 5, node, action: 'examine_edge', queueContents: [...queue], visitedSet: new Set(visited),
+        vars: { current: node, neighbor },
+        desc: 'Examining edge ' + node + '  ' + neighbor + '. Is ' + neighbor + ' already visited?' });
+
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        queue.push(neighbor);
+        steps.push({ line: 7, node, action: 'enqueue', queueContents: [...queue], visitedSet: new Set(visited),
+          vars: { current: node, neighbor },
+          desc: ' ' + neighbor + ' NOT visited. Mark visited, enqueue ' + neighbor + '. Queue: [' + queue.join(', ') + ']' });
+      } else {
+        steps.push({ line: 6, node, action: 'skip_visited', queueContents: [...queue], visitedSet: new Set(visited),
+          vars: { current: node, neighbor },
+          desc: ' ' + neighbor + ' already visited. Skip.' });
+      }
+    }
+  }
+
+  steps.push({ line: -1, node: null, action: 'done', queueContents: [], visitedSet: new Set(visited),
+    vars: {}, desc: ' Done. Queue empty. All reachable nodes visited.' });
+  return steps;
+}
+
+// ======= CANVAS RENDERING =======
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let steps = [], stepIdx = -1, autoTimer = null;
+let graphData = null, startId = null;
+
+function resize() {
+  const wrap = document.getElementById('canvas-wrap');
+  canvas.width = wrap.clientWidth * devicePixelRatio;
+  canvas.height = wrap.clientHeight * devicePixelRatio;
+  canvas.style.width = wrap.clientWidth + 'px';
+  canvas.style.height = wrap.clientHeight + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+window.addEventListener('resize', () => { resize(); renderCurrent(); });
+resize();
+
+function layoutNode(node) {
+  const w = canvas.width / devicePixelRatio, h = canvas.height / devicePixelRatio;
+  return { x: node.x * w * 0.8 + w * 0.1, y: node.y * h * 0.7 + h * 0.15 };
+}
+
+function renderGraph(step) {
+  const w = canvas.width / devicePixelRatio, h = canvas.height / devicePixelRatio;
+  ctx.clearRect(0, 0, w, h);
+
+  // Edges
+  graphData.edges.forEach(([a, b]) => {
+    const na = graphData.nodes.find(n => n.id === a);
+    const nb = graphData.nodes.find(n => n.id === b);
+    if (!na || !nb) return;
+    const pa = layoutNode(na), pb = layoutNode(nb);
+    ctx.strokeStyle = '#3a4a5a';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+  });
+
+  // Highlighted edge (current examination)
+  if (step && step.action === 'examine_edge' && step.vars) {
+    const na = graphData.nodes.find(n => n.id === step.vars.current);
+    const nb = graphData.nodes.find(n => n.id === step.vars.neighbor);
+    if (na && nb) {
+      const pa = layoutNode(na), pb = layoutNode(nb);
+      ctx.strokeStyle = '#ffd54f';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#ffd54f'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // Nodes
+  graphData.nodes.forEach(n => {
+    const p = layoutNode(n);
+    const r = 28;
+    let fill = '#1a2840';
+    let stroke = '#3a4a5a';
+    let strokeW = 2;
+
+    if (step) {
+      if (n.id === step.node) { fill = '#284878'; stroke = '#ffd54f'; strokeW = 3; } // current
+      else if (step.visitedSet && step.visitedSet.has(n.id)) { fill = '#1a3a2a'; stroke = '#69f0ae'; } // visited
+      if (step.queueContents && step.queueContents.includes(n.id) && n.id !== step.node) { stroke = '#7c9af2'; strokeW = 2; } // queued
+    }
+    if (n.id === startId) { stroke = '#ffd54f'; strokeW = 3; } // start node always highlighted
+
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = strokeW;
+    if (n.id === step?.node) { ctx.shadowColor = '#ffd54f'; ctx.shadowBlur = 14; }
+
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(n.id, p.x, p.y);
+  });
+}
+
+function renderQueue(step) {
+  const qEl = document.getElementById('queue');
+  if (!step || !step.queueContents) { qEl.innerHTML = ''; return; }
+  qEl.innerHTML = step.queueContents.map(id => {
+    const cls = id === step.node ? 'queue-item next' : 'queue-item';
+    return '<div class="' + cls + '">' + id + '</div>';
+  }).join('');
+}
+
+function renderVars(step) {
+  const vEl = document.getElementById('vars');
+  if (!step || !step.vars || Object.keys(step.vars).length === 0) { vEl.innerHTML = ''; return; }
+  vEl.innerHTML = Object.entries(step.vars).map(([k, v]) =>
+    '<div class="var-box"><div class="val">' + v + '</div><div class="lbl">' + k + '</div></div>'
+  ).join('');
+}
+
+function renderCode(line) {
+  document.querySelectorAll('#code-panel .ln.hi').forEach(el => el.classList.remove('hi'));
+  if (line > 0) {
+    const el = document.getElementById('cl-' + line);
+    if (el) el.classList.add('hi');
+  }
+}
+
+function buildCodePanel() {
+  document.getElementById('code-panel').innerHTML = CODE.map((l, i) =>
+    '<div class="ln" id="cl-' + (i+1) + '"><span class="n">' + (i+1) + '</span>' + l + '</div>'
+  ).join('');
+}
+
+function renderCurrent() {
+  if (stepIdx < 0 || stepIdx >= steps.length) return;
+  const step = steps[stepIdx];
+  renderGraph(step);
+  renderQueue(step);
+  renderVars(step);
+  renderCode(step.line);
+  document.getElementById('info').innerHTML = step.desc;
+  document.getElementById('step-num').textContent = (stepIdx + 1) + '/' + steps.length;
+  document.getElementById('b-next').disabled = stepIdx >= steps.length - 1;
+  document.getElementById('b-prev').disabled = stepIdx <= 0;
+}
+
+function goNext() { if (stepIdx < steps.length - 1) { stepIdx++; renderCurrent(); } }
+function goPrev() { if (stepIdx > 0) { stepIdx--; renderCurrent(); } }
+function goReset() { stepIdx = -1; stopAuto(); goNext(); }
+
+function startAuto() {
+  if (autoTimer) return;
+  const delays = [700,400,220,120,60];
+  const d = delays[Math.min(4,Math.max(0,(document.getElementById('speed-v').value||3)-1))];
+  document.getElementById('b-auto').textContent = ' Pause';
+  function tick(){ if(stepIdx>=steps.length-1){stopAuto();return;} goNext(); autoTimer=setTimeout(tick,d); }
+  autoTimer=setTimeout(tick,d);
+}
+function stopAuto(){ if(autoTimer){clearTimeout(autoTimer);autoTimer=null;} document.getElementById('b-auto').textContent=' Auto'; }
+
+function loadEx(i) {
+  const ex = EXAMPLES[i];
+  graphData = { nodes: ex.nodes, edges: ex.edges };
+  startId = ex.start;
+  steps = generateSteps(graphData, startId);
+  buildCodePanel();
+  stepIdx = -1; stopAuto(); goNext();
+}
+
+const sel = document.getElementById('ex-sel');
+EXAMPLES.forEach((ex,i) => { const o = document.createElement('option'); o.value=i; o.textContent=ex.name; sel.appendChild(o); });
+sel.addEventListener('change', e => loadEx(parseInt(e.target.value)));
+
+document.getElementById('b-next').addEventListener('click', goNext);
+document.getElementById('b-prev').addEventListener('click', goPrev);
+document.getElementById('b-reset').addEventListener('click', goReset);
+document.getElementById('b-auto').addEventListener('click', () => autoTimer?stopAuto():startAuto());
+document.getElementById('speed-v').addEventListener('input', () => { if(autoTimer){stopAuto();startAuto();} });
+
+window.addEventListener('keydown', e => {
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  if(e.key==='ArrowRight'){e.preventDefault();goNext();}
+  if(e.key==='ArrowLeft'){e.preventDefault();goPrev();}
+  if(e.key===' '){e.preventDefault();autoTimer?stopAuto():startAuto();}
+  if(e.key==='r'||e.key==='R'){if(!e.metaKey){e.preventDefault();goReset();}}
+});
+
+loadEx(0);
+</script>

@@ -41,13 +41,9 @@ while left <= right:
     else: right = mid - 1
 ```
 
+
 ## Visualization Data
-For binary search viz, show:
-- The sorted array as a row of tiles
-- left/right boundary markers that CLOSE IN
-- The mid pointer and the comparison result
-- Grayed-out tiles for the eliminated half
-- A counter: "comparisons: X / log₂(n) = Y"
+Use `array-pointers.html` template. Show the sorted array as tiles. L and R boundary pointers. mid pointer highlighted yellow. Eliminated indices fade to 10%% opacity. Live vars: left, right, mid, arr[mid], target. Step actions: 'init', 'pick_mid', 'compare', 'move_left', 'move_right', 'found', 'not_found'.
 
 ## Example Problems
 1. **Binary Search** — basic template
