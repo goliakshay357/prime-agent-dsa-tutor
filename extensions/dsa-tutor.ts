@@ -42,16 +42,14 @@ If the student asks a sub-question mid-explanation, answer it, but do NOT mark t
 ### 8. Follow ADHD output rules
 Lead with the next action. Number multi-step work. Restate state every turn. Suppress tangents. No preamble, no closing pleasantries.`;
 
-// ═══════════ STATE MACHINE ═══════════
-// [explaining] --mark_approach_complete--> [awaiting_confirmation]
-// [awaiting_confirmation] --student "yes"--> [confirmed]
-// [confirmed] --AI starts next approach--> [explaining]
-
+// ═══════════ STATE MACHINE (per-session) ═══════════
 interface ApproachState {
-  currentApproach: string | null;   // e.g. "brute force", "memoization"
-  awaitingConfirmation: boolean;    // AI called mark_approach_complete
-  confirmed: boolean;               // student said yes
+  currentApproach: string | null;
+  awaitingConfirmation: boolean;
+  confirmed: boolean;
   history: Array<{ name: string; confirmed: boolean }>;
+  turnCount: number;
+  confirmStartTurn: number;   // turn when mark_approach_complete was called
 }
 
 let state: ApproachState = {
@@ -59,7 +57,40 @@ let state: ApproachState = {
   awaitingConfirmation: false,
   confirmed: false,
   history: [],
+  turnCount: 0,
+  confirmStartTurn: 0,
 };
+
+// ═══════════ STUDENT PROFILE (cross-session, durable) ═══════════
+interface PatternRecord {
+  pattern: string;
+  confirmed: number;          // times learner confirmed understanding
+  struggled: number;          // times learner showed confusion before confirming
+  timeToConfirm: number[];    // turns between "approach complete" and "yes" — lower is better
+  lastConfirmedAt: number;    // unix ms
+}
+
+interface StudentProfile {
+  version: 1;
+  patterns: Record<string, PatternRecord>;
+  totalSessions: number;
+}
+
+let profile: StudentProfile = { version: 1, patterns: {}, totalSessions: 0 };
+
+function recordFor(pattern: string): PatternRecord {
+  const key = pattern.trim().toLowerCase();
+  if (!profile.patterns[key]) {
+    profile.patterns[key] = {
+      pattern: pattern.trim(),
+      confirmed: 0,
+      struggled: 0,
+      timeToConfirm: [],
+      lastConfirmedAt: 0,
+    };
+  }
+  return profile.patterns[key];
+}
 
 // ═══════════ SIGNAL DETECTION ═══════════
 
@@ -71,7 +102,7 @@ function detectUnderstanding(text: string): 'confirmed' | 'confused' | 'neutral'
     'that makes sense', 'understood', 'i think i get it',
     'so basically', 'in other words', 'let me explain back',
     'so what you\'re saying', 'if i understand', 'ahh', 'aha',
-    'okay', 'ok got', 'right', 'yes', 'yeah', 'yep', 'makes sense now',
+    'okay', 'ok got', 'right', 'yes', 'yeah', 'yep',
   ];
   for (const s of confirmed) if (lower.includes(s)) return 'confirmed';
 
@@ -83,31 +114,6 @@ function detectUnderstanding(text: string): 'confirmed' | 'confused' | 'neutral'
   for (const s of confused) if (lower.includes(s)) return 'confused';
 
   return 'neutral';
-}
-
-// Broad approach keywords for the backstop (works across all DSA patterns)
-const APPROACH_KEYWORDS: Array<{ name: string; pattern: RegExp }> = [
-  { name: 'brute force', pattern: /\b(brute.?force|naive|exhaustive|try every|all possible paths?)\b/i },
-  { name: 'memoization', pattern: /\b(memoiz|notebook|cache the result|store.*answer|write.*down)\b/i },
-  { name: 'tabulation', pattern: /\b(tabulat|bottom.?up|fill.*table|dp table|dp array)\b/i },
-  { name: 'space optimization', pattern: /\b(space.?optim|only.*last|two variables|constant space|don't need the whole)\b/i },
-  { name: 'binary search', pattern: /\b(binary search|halve|divide.*half|log.*n)\b/i },
-  { name: 'two pointers', pattern: /\b(two.?pointer|converg|left.*right.*pointer)\b/i },
-  { name: 'sliding window', pattern: /\b(sliding window|expand.*shrink|window)\b/i },
-  { name: 'hash table', pattern: /\b(hash.?table|hashmap|hash.?map|dictionary|lookup table)\b/i },
-  { name: 'bfs', pattern: /\b(bfs|breadth.?first|level.?by.?level|queue)\b/i },
-  { name: 'dfs', pattern: /\b(dfs|depth.?first|backtrack|recursi)\b/i },
-  { name: 'merge sort', pattern: /\b(merge sort|divide and conquer)\b/i },
-  { name: 'quick sort', pattern: /\b(quick sort|partition|pivot)\b/i },
-  { name: 'greedy', pattern: /\b(greedy|locally optimal)\b/i },
-];
-
-function detectApproaches(text: string): string[] {
-  const found: string[] = [];
-  for (const kw of APPROACH_KEYWORDS) {
-    if (kw.pattern.test(text)) found.push(kw.name);
-  }
-  return [...new Set(found)];
 }
 
 function hasVerificationQuestion(text: string): boolean {
@@ -125,16 +131,82 @@ function detectCodeDump(text: string): boolean {
   return codeBlocks >= 6 && !hasVerificationQuestion(text);
 }
 
+// ═══════════ PROFILE PERSISTENCE ═══════════
+
+function serializeProfile(): Record<string, unknown> {
+  // Keep only the durable parts (drop transient metrics we don't need to persist verbatim)
+  return { version: 1, patterns: profile.patterns, totalSessions: profile.totalSessions };
+}
+
+function buildProfileNote(): string {
+  const entries = Object.values(profile.patterns);
+  if (entries.length === 0) return '';
+
+  const mastered = entries.filter(p => p.confirmed >= 1).sort((a, b) => b.confirmed - a.confirmed);
+  const weak = entries
+    .filter(p => p.struggled > 0 && (p.struggled > p.confirmed || p.struggled >= 2))
+    .sort((a, b) => b.struggled - a.struggled);
+
+  const lines: string[] = [];
+  if (mastered.length > 0) {
+    lines.push(`Student has confirmed understanding of: ${mastered.map(p => p.pattern).join(', ')}.`);
+  }
+  if (weak.length > 0) {
+    lines.push(`Student has STRUGGLED with: ${weak.map(p => `${p.pattern} (${p.struggled}×)`).join(', ')}. Spend extra turns here. Use a fresh metaphor, not the one that failed.`);
+  }
+  if (weak.length > 0 && mastered.length > 0) {
+    lines.push(`Before introducing a NEW pattern, offer to revisit a weak one: ${weak[0].pattern}.`);
+  }
+  return lines.join('\n');
+}
+
+function buildProgressNote(): string {
+  const confirmed = state.history.filter(h => h.confirmed).map(h => h.name);
+  const current = state.currentApproach;
+
+  if (current && state.awaitingConfirmation && !state.confirmed) {
+    const lines = [];
+    if (confirmed.length > 0) {
+      lines.push(`Approaches the student has confirmed THIS session: ${confirmed.join(', ')}.`);
+    }
+    lines.push(`CURRENT approach: "${current}" — fully explained, awaiting student confirmation.`);
+    lines.push(`Do NOT start the next approach until the student confirms they understand "${current}".`);
+    return lines.join('\n');
+  }
+
+  if (confirmed.length > 0) {
+    return `Approaches the student has confirmed THIS session: ${confirmed.join(', ')}.`;
+  }
+  return '';
+}
+
+function buildProfileSummary(): string {
+  const entries = Object.values(profile.patterns);
+  if (entries.length === 0) return 'No learning history yet. Teach me something first.';
+
+  const lines = entries
+    .sort((a, b) => b.confirmed - a.confirmed)
+    .map(p => {
+      const avgTime = p.timeToConfirm.length > 0
+        ? (p.timeToConfirm.reduce((s, t) => s + t, 0) / p.timeToConfirm.length).toFixed(1)
+        : '—';
+      return `${p.pattern}: confirmed ${p.confirmed}×, struggled ${p.struggled}×, avg confirm ${avgTime} turns`;
+    });
+  return `DSA Learning Profile (${profile.totalSessions} session${profile.totalSessions === 1 ? '' : 's'}):\n\n${lines.join('\n')}`;
+}
+
 // ═══════════ EXTENSION ═══════════
 
 export default function (pi: ExtensionAPI) {
-  // 1. Inject teaching persona
+  // 1. Inject teaching persona + progress + profile
   pi.on("before_agent_start", async (event) => {
     let prompt = TEACHING_PROMPT + "\n\n" + event.systemPrompt;
 
-    // Inject current teaching progress
     const progress = buildProgressNote();
-    if (progress) prompt += "\n\n" + progress;
+    if (progress) prompt += "\n\n## Session Progress\n" + progress;
+
+    const profileNote = buildProfileNote();
+    if (profileNote) prompt += "\n\n## Student Profile (from previous sessions)\n" + profileNote;
 
     return { systemPrompt: prompt };
   });
@@ -170,8 +242,8 @@ export default function (pi: ExtensionAPI) {
       state.currentApproach = approach;
       state.awaitingConfirmation = true;
       state.confirmed = false;
+      state.confirmStartTurn = state.turnCount;
 
-      // Record in history if new
       if (!state.history.find(h => h.name === approach)) {
         state.history.push({ name: approach, confirmed: false });
       }
@@ -187,21 +259,45 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // 3. Reset on session start
-  pi.on("session_start", async () => {
-    state = { currentApproach: null, awaitingConfirmation: false, confirmed: false, history: [] };
+  // 3. Session start — load profile, reset per-session state
+  pi.on("session_start", async (_event, ctx) => {
+    state = {
+      currentApproach: null,
+      awaitingConfirmation: false,
+      confirmed: false,
+      history: [],
+      turnCount: 0,
+      confirmStartTurn: 0,
+    };
+
+    // Reconstruct the durable profile from the LAST "dsa-profile" entry
+    const entries = ctx.sessionManager.getEntries();
+    const lastProfile = entries
+      .filter((e: any) => e.type === "custom" && e.customType === "dsa-profile")
+      .pop() as { data?: StudentProfile } | undefined;
+
+    if (lastProfile?.data && lastProfile.data.patterns) {
+      profile = lastProfile.data;
+    }
   });
 
-  // 4. ENFORCEMENT: check every assistant response
+  // 4. Persist profile on shutdown (final safety net)
+  pi.on("session_shutdown", async () => {
+    if (Object.keys(profile.patterns).length > 0) {
+      pi.appendEntry("dsa-profile", serializeProfile());
+    }
+  });
+
+  // 5. ENFORCEMENT: check every assistant response
   pi.on("turn_end", async (event) => {
     if (event.message.role !== 'assistant') return;
+    state.turnCount++;
 
     const text = event.message.content
       .filter((b: any) => b.type === 'text')
       .map((b: any) => b.text)
       .join('\n');
 
-    // === VIOLATION 1: code dump without engagement ===
     if (detectCodeDump(text)) {
       pi.sendUserMessage(
         "Too much code with no engagement. End with a question. Ask the student to trace through the code with a concrete input.",
@@ -210,8 +306,6 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    // === VIOLATION 2: no verification question ===
-    // Only enforce when the AI has marked an approach complete (i.e., should be asking for verification)
     if (state.awaitingConfirmation && !state.confirmed && !hasVerificationQuestion(text)) {
       pi.sendUserMessage(
         `You marked "${state.currentApproach}" complete but didn't ask the student to verify. Ask them to explain "${state.currentApproach}" back in their own words. END with a question.`,
@@ -221,7 +315,7 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // 5. Track student confirmation — ONLY counts when awaitingConfirmation is true
+  // 6. Track student confirmation + struggle — persist profile on confirmation
   pi.on("input", async (event) => {
     if (!state.awaitingConfirmation || state.confirmed) return { action: 'continue' };
 
@@ -231,17 +325,33 @@ export default function (pi: ExtensionAPI) {
       state.confirmed = true;
       state.awaitingConfirmation = false;
 
-      // Update history
       const entry = state.history.find(h => h.name === state.currentApproach);
       if (entry) entry.confirmed = true;
+
+      // Update the durable profile
+      const rec = recordFor(state.currentApproach || 'unknown');
+      rec.confirmed++;
+      rec.lastConfirmedAt = Date.now();
+      const turnsToConfirm = Math.max(1, state.turnCount - state.confirmStartTurn + 1);
+      rec.timeToConfirm.push(turnsToConfirm);
+
+      // Persist immediately (natural checkpoint)
+      pi.appendEntry("dsa-profile", serializeProfile());
     }
 
-    // 'confused' or 'neutral' → leave awaitingConfirmation true, let AI re-explain
+    if (understanding === 'confused') {
+      // Record the struggle against the current approach
+      if (state.currentApproach) {
+        const rec = recordFor(state.currentApproach);
+        rec.struggled++;
+      }
+      // Leave awaitingConfirmation = true so the AI re-explains
+    }
 
     return { action: 'continue' };
   });
 
-  // 6. Block solution code writes (allow HTML viz and markdown)
+  // 7. Block solution code writes (allow HTML viz and markdown)
   pi.on("tool_call", async (event) => {
     if (event.toolName === 'write' || event.toolName === 'edit') {
       const input = event.input as any;
@@ -256,25 +366,12 @@ export default function (pi: ExtensionAPI) {
       }
     }
   });
-}
 
-function buildProgressNote(): string {
-  const confirmed = state.history.filter(h => h.confirmed).map(h => h.name);
-  const current = state.currentApproach;
-
-  if (current && state.awaitingConfirmation && !state.confirmed) {
-    const lines = [];
-    if (confirmed.length > 0) {
-      lines.push(`Approaches the student has confirmed: ${confirmed.join(', ')}.`);
-    }
-    lines.push(`CURRENT approach: "${current}" — fully explained, awaiting student confirmation.`);
-    lines.push(`Do NOT start the next approach until the student confirms they understand "${current}".`);
-    return lines.join('\n');
-  }
-
-  if (confirmed.length > 0) {
-    return `Approaches the student has confirmed: ${confirmed.join(', ')}.`;
-  }
-
-  return '';
+  // 8. /progress command — make wins visible
+  pi.registerCommand("progress", {
+    description: "Show your DSA learning profile (patterns confirmed, struggles, avg time to confirm)",
+    handler: async (_args, ctx) => {
+      ctx.ui.notify(buildProfileSummary(), "info");
+    },
+  });
 }
