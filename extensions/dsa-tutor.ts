@@ -1,6 +1,6 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// ═══════════ TEACHING PERSONA (injected into system prompt) ═══════════
+// ═══════════ TEACHING PERSONA ═══════════
 const TEACHING_PROMPT = `You are a DSA teacher for someone with ADHD who struggles with abstract concepts and has weak working memory. Your student has NO pen and paper — everything must live on screen.
 
 ## Core Teaching Philosophy
@@ -14,13 +14,11 @@ This is the psychology of ALL algorithm optimization. Lead with this.
 ## Teaching Rules
 
 ### 1. One approach at a time, one step at a time
-Explain brute force first. Fully. Only when the student says they understand, move to the optimized version.
-DO NOT explain memoization and tabulation in the same turn. They are separate approaches.
-DO NOT jump to "the DP solution" before the student has internalized why brute force fails.
+Explain the CURRENT approach fully. The progression is always: brute force first → then optimized approaches one by one. Never explain two approaches in the same turn.
 
 ### 2. Concrete before abstract
-Start every concept with the problem's ACTUAL data (real strings, real arrays, real numbers). Draw the data as it exists in the computer's memory.
-Only introduce variable names (i, j, dp[i]) AFTER the idea is already clear in plain English.
+Start every concept with the problem's ACTUAL data (real strings, real arrays, real numbers).
+Only introduce variable names (i, j, dp[i]) AFTER the idea is clear in plain English.
 
 ### 3. Visualize what the computer stores
 When explaining any algorithm, always show:
@@ -30,81 +28,115 @@ When explaining any algorithm, always show:
 - What it never needs again (wasted storage)
 
 ### 4. Generate interactive HTML visualizations
-When explaining a new algorithm, ALWAYS generate a self-contained interactive HTML file. Follow the dsa-visual-teacher skill's templates.
+For each approach, generate a self-contained interactive HTML file. Follow the dsa-visual-teacher skill. Pick the template matching your data structure (recursion tree, array pointers, graph traversal).
 
-### 5. Verify understanding at every stage
-After each major phase (brute force, memoization, tabulation, space optimization), ask the student to explain back what they understood in their own words. Do NOT move to the next phase until they do.
-If confused, ask "which step breaks first" and re-explain ONLY that step.
+### 5. VERIFY UNDERSTANDING AFTER EVERY APPROACH
+After explaining ONE approach (brute force, or one optimization), you MUST:
+- Ask the student to explain it back in their own words
+- Do NOT move to the next approach until they confirm understanding
+- If confused, ask "which step breaks first" and re-explain ONLY that step
+- Never restart the whole explanation
 
 ### 6. Follow ADHD output rules
 Lead with the next action. Number multi-step work. Restate state every turn. Suppress tangents. No preamble, no closing pleasantries.`;
 
-// ═══════════ STATE TRACKING ═══════════
-// Tracks which teaching stage we're in and whether the student confirmed
-interface TutorState {
-  stage: 'idle' | 'brute-force' | 'memoization' | 'tabulation' | 'space-opt';
-  stageConfirmed: boolean;
-  lastResponseWasQuestion: boolean;
-  turnCount: number;
+// ═══════════ DYNAMIC STAGE TRACKING ═══════════
+// Concepts are discovered from the conversation, not hardcoded.
+// Works for any problem: DP (brute→memo→tab), binary search (linear→binary), 
+// sliding window (nested→window), sorting (bubble→merge→quick), etc.
+
+interface TrackedConcept {
+  name: string;           // e.g., "brute force", "memoization", "merge sort"
+  explained: boolean;     // AI has explained this concept
+  confirmed: boolean;     // student confirmed understanding
 }
 
-let state: TutorState = { stage: 'idle', stageConfirmed: false, lastResponseWasQuestion: false, turnCount: 0 };
+let concepts: TrackedConcept[] = [];
+let currentConceptIndex = -1;  // -1 = nothing being taught yet
+let turnsWithoutQuestion = 0;
 
-// ═══════════ UNDERSTANDING SIGNALS ═══════════
-// Words/phrases that indicate the student understood
-const CONFIRMATION_SIGNALS = [
-  'i understand', 'i got it', 'got it', 'makes sense', 'i see',
-  'that makes sense', 'clear', 'understood', 'i think i get it',
-  'so basically', 'in other words', 'let me explain back',
-  'so what you\'re saying', 'if i understand',
-];
-
-// Words/phrases that indicate confusion — need to re-explain
-const CONFUSION_SIGNALS = [
-  'i don\'t get it', 'don\'t understand', 'what do you mean',
-  'huh', 'unclear', 'confused', 'i\'m lost', 'not following',
-  'can you explain', 'what is', 'how does', 'why',
-  'i don\'t know', 'not sure', 'wait',
-];
-
-// ═══════════ ENFORCEMENT FUNCTIONS ═══════════
+// ═══════════ SIGNAL DETECTION ═══════════
 
 function detectUnderstanding(text: string): 'confirmed' | 'confused' | 'neutral' {
   const lower = text.toLowerCase();
-  for (const signal of CONFIRMATION_SIGNALS) {
-    if (lower.includes(signal)) return 'confirmed';
-  }
-  for (const signal of CONFUSION_SIGNALS) {
-    if (lower.includes(signal)) return 'confused';
-  }
+
+  const confirmed = [
+    'i understand', 'i got it', 'got it', 'makes sense', 'i see',
+    'that makes sense', 'clear', 'understood', 'i think i get it',
+    'so basically', 'in other words', 'let me explain back',
+    'so what you\'re saying', 'if i understand', 'ahh', 'aha',
+    'okay', 'ok got', 'right', 'yes', 'yeah',
+  ];
+  for (const s of confirmed) if (lower.includes(s)) return 'confirmed';
+
+  const confused = [
+    'i don\'t get it', 'don\'t understand', 'what do you mean',
+    'huh', 'unclear', 'confused', 'i\'m lost', 'not following',
+    'can you explain that', 'what is', 'how does', 'i don\'t know',
+    'not sure', 'wait',
+  ];
+  for (const s of confused) if (lower.includes(s)) return 'confused';
+
   return 'neutral';
 }
 
-function detectCodeDump(text: string): boolean {
-  // Heuristic: if there's a large code block and no question mark
-  const codeBlockCount = (text.match(/```/g) || []).length;
-  const hasQuestion = text.includes('?');
-  const hasVerifyPhrase = /explain.*back|your turn|try it|what do you think|does that make sense/i.test(text);
-  return codeBlockCount >= 4 && !hasQuestion && !hasVerifyPhrase;
-}
+// Detect concepts being introduced in an AI response
+// Looks for patterns like: "Now let's look at X" or "Stage 2: X" or "## X Approach"
+function detectNewConcepts(text: string): string[] {
+  const found: string[] = [];
+  const patterns = [
+    /(?:now|next|then)\s+(?:let'?s?\s+)?(?:look at|try|use|apply|consider)\s+(?:the\s+)?([^,.!]+?(?:approach|method|solution|technique|algorithm|way))/gi,
+    /(?:stage|step|phase|approach)\s*\d+\s*:?\s*([^,.!\n]+)/gi,
+    /#+\s*(.+?(?:approach|method|solution|technique))[:\s]/gi,
+    /\b(brute.?force|naive|exhaustive|linear scan)\b/gi,
+    /\b(memoiz|tabulation|bottom.?up|dynamic programming)\b/gi,
+    /\b(binary search|two.?pointer|sliding window|hash|set|dictionary)\b/gi,
+    /\b(merge sort|quick sort|bubble sort|heap sort|counting sort)\b/gi,
+    /\b(bfs|dfs|dijkstra|topological|union.?find)\b/gi,
+    /\b(greedy|backtracking|divide and conquer)\b/gi,
+    /\b(space.?optim|only.*last|two.*variable|constant space)\b/gi,
+  ];
 
-function detectStageJump(text: string): boolean {
-  // Detects if the AI tried to explain multiple optimization stages in one response
-  const stageKeywords = {
-    'brute-force': /\b(brute.?force|naive|obvious approach|try every|all possible)\b/i,
-    'memoization': /\b(memoiz|notebook|cache the result|store.*answer|write it down)\b/i,
-    'tabulation': /\b(tabulat|bottom.?up|fill.*table|dp table|dp array)\b/i,
-    'space-opt': /\b(space.*optim|only.*need.*last|don't need.*whole|two variables)\b/i,
-  };
-
-  let stagesMentioned = 0;
-  for (const [stage, regex] of Object.entries(stageKeywords)) {
-    if (regex.test(text)) stagesMentioned++;
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const name = (match[1] || match[0]).trim().toLowerCase();
+      if (name.length > 2 && name.length < 60) found.push(name);
+    }
   }
-  return stagesMentioned >= 2 && state.stage === 'idle';
+
+  // Deduplicate similar names
+  return [...new Set(found)];
 }
 
-// ═══════════ EXTENSION =══════════
+function hasVerificationQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  const last200 = trimmed.slice(-200);
+
+  return (
+    trimmed.endsWith('?') ||
+    last200.includes('?') ||
+    /explain.*back|your turn|try it|what.*think|does that make sense|in your own words|how would you/i.test(last200) ||
+    /can you (tell|explain|describe|summarize|walk)/i.test(last200) ||
+    /what.*(next|happen|wrong|missing)/i.test(last200)
+  );
+}
+
+function detectCodeDump(text: string): boolean {
+  const codeBlocks = (text.match(/```/g) || []).length;
+  const lines = text.split('\n').filter(l => l.trim().length > 0).length;
+  return codeBlocks >= 6 && !hasVerificationQuestion(text);
+}
+
+function detectTooManyConcepts(text: string): boolean {
+  // Count distinct concept mentions
+  const found = detectNewConcepts(text);
+  // "brute force" is always allowed in the first response
+  const nonBruteForce = found.filter(c => !c.includes('brute') && !c.includes('naive'));
+  return nonBruteForce.length >= 2;
+}
+
+// ═══════════ EXTENSION ═══════════
 
 export default function (pi: ExtensionAPI) {
   // 1. Inject teaching persona
@@ -112,11 +144,15 @@ export default function (pi: ExtensionAPI) {
     return { systemPrompt: TEACHING_PROMPT + "\n\n" + event.systemPrompt };
   });
 
-  // 2. ENFORCEMENT: Intercept every assistant response
-  pi.on("turn_end", async (event, ctx) => {
-    state.turnCount++;
+  // 2. Reset state on new session
+  pi.on("session_start", async () => {
+    concepts = [];
+    currentConceptIndex = -1;
+    turnsWithoutQuestion = 0;
+  });
 
-    // Only check assistant messages
+  // 3. ENFORCEMENT: Check every assistant response
+  pi.on("turn_end", async (event, ctx) => {
     if (event.message.role !== 'assistant') return;
 
     const text = event.message.content
@@ -124,105 +160,108 @@ export default function (pi: ExtensionAPI) {
       .map((b: any) => b.text)
       .join('\n');
 
-    // === ENFORCEMENT 1: Detect stage jumps ===
-    if (detectStageJump(text)) {
+    // Detect what concepts the AI is trying to explain
+    const mentionedConcepts = detectNewConcepts(text);
+
+    // Track new concepts
+    for (const name of mentionedConcepts) {
+      if (!concepts.find(c => c.name === name)) {
+        concepts.push({ name, explained: true, confirmed: false });
+      }
+    }
+
+    // === VIOLATION 1: Too many concepts at once ===
+    if (detectTooManyConcepts(text)) {
       pi.sendUserMessage(
-        "You explained multiple optimization stages at once. Go back. Explain only ONE stage. The student needs to confirm understanding before moving on.",
+        "STOP. You mentioned multiple optimization approaches in one response. Pick ONE. Explain it fully. The student hasn't even confirmed they understood the previous concept yet. ONE approach per response.",
         { deliverAs: "steer" }
       );
       return;
     }
 
-    // === ENFORCEMENT 2: Detect code dumps without verification ===
+    // === VIOLATION 2: Code dump without engagement ===
     if (detectCodeDump(text)) {
       pi.sendUserMessage(
-        "You dumped a lot of code without asking the student to engage. End EVERY response with a question that checks understanding. Ask them to explain back what they just learned.",
+        "Too much code with no engagement. End with a question. Ask the student to trace through the code with a concrete input.",
         { deliverAs: "steer" }
       );
       return;
     }
 
-    // === ENFORCEMENT 3: Check if response ends with a question ===
-    const trimmedText = text.trim();
-    const endsWithQuestion = trimmedText.endsWith('?');
-    const hasQuestionNearEnd = trimmedText.slice(-200).includes('?');
-    const hasVerifyPhrase = /explain.*back|your turn|try it|what.*think|does that make sense|in your own words/i.test(trimmedText.slice(-300));
-
-    state.lastResponseWasQuestion = endsWithQuestion || hasQuestionNearEnd || hasVerifyPhrase;
-
-    if (!state.lastResponseWasQuestion && state.turnCount > 1) {
-      pi.sendUserMessage(
-        "Your response didn't end with a question. Always end by asking the student to verify understanding. Example: 'Can you explain back to me in your own words what the brute force approach does?'",
-        { deliverAs: "steer" }
-      );
+    // === VIOLATION 3: No verification question ===
+    if (!hasVerificationQuestion(text)) {
+      turnsWithoutQuestion++;
+      if (turnsWithoutQuestion >= 2) {
+        pi.sendUserMessage(
+          "You haven't asked a verification question in " + turnsWithoutQuestion + " turns. Ask the student to explain the current approach back in their own words. END with a question.",
+          { deliverAs: "steer" }
+        );
+      }
+    } else {
+      turnsWithoutQuestion = 0;
     }
   });
 
-  // 3. ENFORCEMENT: Check student responses for understanding
+  // 4. Track student confirmation
   pi.on("input", async (event) => {
-    // Only check when we're in an active teaching stage
-    if (state.stage === 'idle') return { action: 'continue' };
+    if (concepts.length === 0) return { action: 'continue' };
 
     const understanding = detectUnderstanding(event.text);
 
     if (understanding === 'confirmed') {
-      state.stageConfirmed = true;
-      // Don't intercept — let the AI see the confirmation
-      return { action: 'continue' };
+      // Mark the most recent unconfirmed concept as confirmed
+      for (let i = concepts.length - 1; i >= 0; i--) {
+        if (concepts[i].explained && !concepts[i].confirmed) {
+          concepts[i].confirmed = true;
+          break;
+        }
+      }
     }
 
     if (understanding === 'confused') {
-      state.stageConfirmed = false;
-      // Don't intercept — let the AI see the confusion and re-explain
-      return { action: 'continue' };
-    }
-
-    // Neutral — student didn't explicitly confirm
-    // If the AI just asked a verification question and the student gave a neutral answer,
-    // nudge the AI to re-verify
-    if (state.lastResponseWasQuestion && understanding === 'neutral') {
-      // Let it pass but mark as unconfirmed
-      state.stageConfirmed = false;
+      // Reset confirmation — needs re-explanation
+      for (let i = concepts.length - 1; i >= 0; i--) {
+        if (concepts[i].explained && !concepts[i].confirmed) {
+          concepts[i].confirmed = false;
+          break;
+        }
+      }
     }
 
     return { action: 'continue' };
   });
 
-  // 4. ENFORCEMENT: Track teaching stages
-  pi.on("before_agent_start", async (event) => {
-    const prompt = typeof event.prompt === 'string' ? event.prompt : '';
-    // Detect stage from teaching commands
-    if (/brute.?force|naive/i.test(prompt) && /explain|teach|what.*approach/i.test(prompt)) {
-      state = { stage: 'brute-force', stageConfirmed: false, lastResponseWasQuestion: false, turnCount: 0 };
+  // 5. Before next agent start, inject concept progress
+  pi.on("before_agent_start", async () => {
+    if (concepts.length === 0) return;
+
+    const unconfirmed = concepts.filter(c => !c.confirmed).map(c => c.name);
+    const confirmed = concepts.filter(c => c.confirmed).map(c => c.name);
+
+    let progressNote = '';
+    if (confirmed.length > 0) {
+      progressNote += `\nConcepts student has confirmed understanding: ${confirmed.join(', ')}.`;
     }
-    if (/memoiz|notebook|cache/i.test(prompt)) {
-      state = { stage: 'memoization', stageConfirmed: false, lastResponseWasQuestion: false, turnCount: 0 };
+    if (unconfirmed.length > 0) {
+      progressNote += `\nCURRENT concept student needs to understand: ${unconfirmed[0]}. Do NOT move past this until confirmed.`;
     }
-    if (/tabulat|bottom.?up|table/i.test(prompt)) {
-      state = { stage: 'tabulation', stageConfirmed: false, lastResponseWasQuestion: false, turnCount: 0 };
+
+    if (progressNote) {
+      return { systemPrompt: progressNote };
     }
   });
 
-  // 5. Session start — reset state
-  pi.on("session_start", async () => {
-    state = { stage: 'idle', stageConfirmed: false, lastResponseWasQuestion: false, turnCount: 0 };
-  });
-
-  // 6. Block code-writing tools when in teaching mode
+  // 6. Block solution code writes (allow HTML viz and markdown)
   pi.on("tool_call", async (event) => {
     if (event.toolName === 'write' || event.toolName === 'edit') {
       const input = event.input as any;
       const path = input?.path || input?.file_path || '';
-      // Allow HTML visualization files
-      if (path.endsWith('.html')) return;
-      // Allow markdown skill files
-      if (path.endsWith('.md')) return;
+      if (path.endsWith('.html') || path.endsWith('.md')) return;
 
-      // Block code files unless student explicitly asked
-      if (/\.(py|js|ts|java|cpp|go|rs)$/.test(path)) {
+      if (/\.(py|js|ts|java|cpp|go|rs|swift|kt)$/.test(path)) {
         return {
           block: true,
-          reason: "Teaching mode: don't write solution code unless the student explicitly asked for it after attempting. Generate an HTML visualization instead."
+          reason: "Teaching mode: don't write solution code unless the student explicitly asked after attempting. Generate an HTML visualization instead."
         };
       }
     }
