@@ -174,6 +174,27 @@ Given a DP problem, ask in this order:
 • "I will sum the sub-counts." — why it hurts: the recurrence is a product, not a sum, of left and right sub-counts. Summing turns Catalan into a Fibonacci-shaped 1D DP and produces values like dp[1..5] = 1, 2, 4, 8, 16 — visibly wrong against the known Catalan sequence. Interviewers test on n = 3 because dp[3] = 5 exposes the bug immediately (sum gives 4). • "Recurse without memoisation and compute the count." — why it hurts: the recursive count without memo is exponential — branching factor n at depth n, identical sub-problems re-computed thousands of times for n = 19 . Interviewers ask "what is your time complexity?" specifically to surface this; "exponential, but Python is fast" is the wrong answer. Tabulate. • "Generate Parentheses is a string problem, not a Catalan problem." — why it hurts: it is both — and seeing the Catalan structure unlocks the count and the generalisation to "number of valid sequences of length 2n with constraint X". Treating it as a one-off backtracking exercise misses the family link that senior interviewers probe with "how many such strings exist?". Learn & Excel · learnandexcel.in · Page 5
 
 
+## Deep References (read on demand)
+
+The recognition data above is the index. For FULL detail on a specific pattern — the code blueprint, walkthroughs, edge cases, and follow-up questions — read the matching reference file:
+
+| Pattern | Reference file |
+|---------|---------------|
+| P61 Fibonacci-family | `references/p61-fibonacci-family.md` |
+| P62 House Robber | `references/p62-house-robber.md` |
+| P63 Coin Change | `references/p63-coin-change.md` |
+| P64 Unique Paths | `references/p64-unique-paths.md` |
+| P65 Edit Distance | `references/p65-edit-distance.md` |
+| P66 0/1 Knapsack | `references/p66-knapsack-01.md` |
+| P67 Unbounded Knapsack | `references/p67-unbounded-knapsack.md` |
+| P68 LCS | `references/p68-lcs.md` |
+| P69 LIS | `references/p69-lis.md` |
+| P70 Palindrome | `references/p70-palindrome.md` |
+| P71 Stock | `references/p71-stock.md` |
+| P72 Catalan | `references/p72-catalan.md` |
+
+**When to drill into a reference:** once the learner has identified the pattern (recognition done), read the reference file to get the exact blueprint code, walkthrough steps, and edge cases. Do NOT read all 12 — only the one(s) the learner is working on.
+
 ## How to Use This Skill
 
 1. When the learner brings a problem, FIRST walk the recognition decision tree together.
