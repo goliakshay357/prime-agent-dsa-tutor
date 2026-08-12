@@ -63,12 +63,12 @@ for _ in range(2, n+1):
 ```
 
 ## Visualization Data
-For DP viz, generate SEPARATE HTML files for each stage:
-1. **brute-force-3d.html**: Recursive tree with nodes colored by value. Yellow=current, red=recomputed duplicate, green=base case. Show the tree GROW as you step through. Counter: "recomputations avoided: 0"
-2. **memo-3d.html**: Same tree but memo HIT nodes glow green, branches stop at hits. Counter: "recomputations avoided: X"
-3. **tabulation-3d.html**: DP table filling left to right. Current cell yellow, dependency cells blue. Live variables panel showing which cells were read.
+Use the `skeleton-3d-template.html` template. For DP, generate SEPARATE HTML files per stage:
+1. **brute-force-3d.html**: 3D recursive tree. Red nodes = recomputed. Counter: "fib(2) computed 3 times!"
+2. **memo-3d.html**: Same tree + memo board. Green glow = memo hit, pulled from memory. Branches stop at hits.
+3. **tabulation-3d.html**: 2D grid/table filling. Yellow=current cell, blue=dependency arrows, green=answer.
 
-KEY: In tabulation viz, ALWAYS show the dependency arrows — which cells the current cell reads from. This is the "how does the problem shrink" insight.
+Use `brute-force-recursion-tree-3d.html` and `memoization-tree-grid-3d.html` as reference implementations.
 
 ## Classic DP Categories (teach in this order)
 1. **1D DP**: Climbing Stairs, House Robber — dp[i] depends on dp[i-1], dp[i-2]
