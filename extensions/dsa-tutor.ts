@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 // ═══════════ TEACHING PERSONA ═══════════
 const TEACHING_PROMPT = `You are a DSA teacher for someone with ADHD who struggles with abstract concepts and has weak working memory. Your student has NO pen and paper — everything must live on screen.
@@ -13,47 +14,49 @@ This is the psychology of ALL algorithm optimization. Lead with this.
 
 ## Teaching Rules
 
-### 1. One approach at a time, one step at a time
-Explain the CURRENT approach fully. The progression is always: brute force first → then optimized approaches one by one. Never explain two approaches in the same turn.
+### 1. One approach at a time
+Explain ONE approach fully. The progression is always: brute force first, then optimized approaches one by one. Never explain two approaches in the same turn.
 
 ### 2. Concrete before abstract
-Start every concept with the problem's ACTUAL data (real strings, real arrays, real numbers).
-Only introduce variable names (i, j, dp[i]) AFTER the idea is clear in plain English.
+Start every concept with the problem's ACTUAL data (real strings, arrays, numbers). Draw it. Only introduce variable names (i, j, dp[i]) AFTER the idea is clear in plain English.
 
 ### 3. Visualize what the computer stores
-When explaining any algorithm, always show:
-- What the computer is holding in memory RIGHT NOW
-- What it just computed
-- What it's about to compute
-- What it never needs again (wasted storage)
+Always show: what the computer holds in memory NOW, what it just computed, what it's about to compute, what it never needs again.
 
 ### 4. Generate interactive HTML visualizations
-For each approach, generate a self-contained interactive HTML file. Follow the dsa-visual-teacher skill. Pick the template matching your data structure (recursion tree, array pointers, graph traversal).
+For each approach, generate a self-contained interactive HTML file. Follow the dsa-visual-teacher skill. Pick the template matching your data structure.
 
-### 5. VERIFY UNDERSTANDING AFTER EVERY APPROACH
-After explaining ONE approach (brute force, or one optimization), you MUST:
-- Ask the student to explain it back in their own words
-- Do NOT move to the next approach until they confirm understanding
-- If confused, ask "which step breaks first" and re-explain ONLY that step
-- Never restart the whole explanation
+### 5. Signal when an approach is complete
+When you have FULLY explained one approach — every step, with visualization — call the mark_approach_complete tool with the approach name. THEN ask the student to verify their understanding of the WHOLE approach.
 
-### 6. Follow ADHD output rules
+Do NOT call mark_approach_complete for a sub-point or a clarification. Only call it when the entire approach is done.
+
+### 6. Verify understanding before moving on
+After calling mark_approach_complete, ask the student to explain the approach back in their own words. Do NOT start the next approach until they confirm.
+
+If the student asks a sub-question mid-explanation, answer it, but do NOT mark the approach complete. Keep explaining until the whole approach is done.
+
+### 7. Follow ADHD output rules
 Lead with the next action. Number multi-step work. Restate state every turn. Suppress tangents. No preamble, no closing pleasantries.`;
 
-// ═══════════ DYNAMIC STAGE TRACKING ═══════════
-// Concepts are discovered from the conversation, not hardcoded.
-// Works for any problem: DP (brute→memo→tab), binary search (linear→binary), 
-// sliding window (nested→window), sorting (bubble→merge→quick), etc.
+// ═══════════ STATE MACHINE ═══════════
+// [explaining] --mark_approach_complete--> [awaiting_confirmation]
+// [awaiting_confirmation] --student "yes"--> [confirmed]
+// [confirmed] --AI starts next approach--> [explaining]
 
-interface TrackedConcept {
-  name: string;           // e.g., "brute force", "memoization", "merge sort"
-  explained: boolean;     // AI has explained this concept
-  confirmed: boolean;     // student confirmed understanding
+interface ApproachState {
+  currentApproach: string | null;   // e.g. "brute force", "memoization"
+  awaitingConfirmation: boolean;    // AI called mark_approach_complete
+  confirmed: boolean;               // student said yes
+  history: Array<{ name: string; confirmed: boolean }>;
 }
 
-let concepts: TrackedConcept[] = [];
-let currentConceptIndex = -1;  // -1 = nothing being taught yet
-let turnsWithoutQuestion = 0;
+let state: ApproachState = {
+  currentApproach: null,
+  awaitingConfirmation: false,
+  confirmed: false,
+  history: [],
+};
 
 // ═══════════ SIGNAL DETECTION ═══════════
 
@@ -62,78 +65,61 @@ function detectUnderstanding(text: string): 'confirmed' | 'confused' | 'neutral'
 
   const confirmed = [
     'i understand', 'i got it', 'got it', 'makes sense', 'i see',
-    'that makes sense', 'clear', 'understood', 'i think i get it',
+    'that makes sense', 'understood', 'i think i get it',
     'so basically', 'in other words', 'let me explain back',
     'so what you\'re saying', 'if i understand', 'ahh', 'aha',
-    'okay', 'ok got', 'right', 'yes', 'yeah',
+    'okay', 'ok got', 'right', 'yes', 'yeah', 'yep', 'makes sense now',
   ];
   for (const s of confirmed) if (lower.includes(s)) return 'confirmed';
 
   const confused = [
     'i don\'t get it', 'don\'t understand', 'what do you mean',
     'huh', 'unclear', 'confused', 'i\'m lost', 'not following',
-    'can you explain that', 'what is', 'how does', 'i don\'t know',
-    'not sure', 'wait',
+    'what is', 'how does', 'i don\'t know', 'not sure', 'wait',
   ];
   for (const s of confused) if (lower.includes(s)) return 'confused';
 
   return 'neutral';
 }
 
-// Detect concepts being introduced in an AI response
-// Looks for patterns like: "Now let's look at X" or "Stage 2: X" or "## X Approach"
-function detectNewConcepts(text: string): string[] {
+// Broad approach keywords for the backstop (works across all DSA patterns)
+const APPROACH_KEYWORDS: Array<{ name: string; pattern: RegExp }> = [
+  { name: 'brute force', pattern: /\b(brute.?force|naive|exhaustive|try every|all possible paths?)\b/i },
+  { name: 'memoization', pattern: /\b(memoiz|notebook|cache the result|store.*answer|write.*down)\b/i },
+  { name: 'tabulation', pattern: /\b(tabulat|bottom.?up|fill.*table|dp table|dp array)\b/i },
+  { name: 'space optimization', pattern: /\b(space.?optim|only.*last|two variables|constant space|don't need the whole)\b/i },
+  { name: 'binary search', pattern: /\b(binary search|halve|divide.*half|log.*n)\b/i },
+  { name: 'two pointers', pattern: /\b(two.?pointer|converg|left.*right.*pointer)\b/i },
+  { name: 'sliding window', pattern: /\b(sliding window|expand.*shrink|window)\b/i },
+  { name: 'hash table', pattern: /\b(hash.?table|hashmap|hash.?map|dictionary|lookup table)\b/i },
+  { name: 'bfs', pattern: /\b(bfs|breadth.?first|level.?by.?level|queue)\b/i },
+  { name: 'dfs', pattern: /\b(dfs|depth.?first|backtrack|recursi)\b/i },
+  { name: 'merge sort', pattern: /\b(merge sort|divide and conquer)\b/i },
+  { name: 'quick sort', pattern: /\b(quick sort|partition|pivot)\b/i },
+  { name: 'greedy', pattern: /\b(greedy|locally optimal)\b/i },
+];
+
+function detectApproaches(text: string): string[] {
   const found: string[] = [];
-  const patterns = [
-    /(?:now|next|then)\s+(?:let'?s?\s+)?(?:look at|try|use|apply|consider)\s+(?:the\s+)?([^,.!]+?(?:approach|method|solution|technique|algorithm|way))/gi,
-    /(?:stage|step|phase|approach)\s*\d+\s*:?\s*([^,.!\n]+)/gi,
-    /#+\s*(.+?(?:approach|method|solution|technique))[:\s]/gi,
-    /\b(brute.?force|naive|exhaustive|linear scan)\b/gi,
-    /\b(memoiz|tabulation|bottom.?up|dynamic programming)\b/gi,
-    /\b(binary search|two.?pointer|sliding window|hash|set|dictionary)\b/gi,
-    /\b(merge sort|quick sort|bubble sort|heap sort|counting sort)\b/gi,
-    /\b(bfs|dfs|dijkstra|topological|union.?find)\b/gi,
-    /\b(greedy|backtracking|divide and conquer)\b/gi,
-    /\b(space.?optim|only.*last|two.*variable|constant space)\b/gi,
-  ];
-
-  for (const pattern of patterns) {
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      const name = (match[1] || match[0]).trim().toLowerCase();
-      if (name.length > 2 && name.length < 60) found.push(name);
-    }
+  for (const kw of APPROACH_KEYWORDS) {
+    if (kw.pattern.test(text)) found.push(kw.name);
   }
-
-  // Deduplicate similar names
   return [...new Set(found)];
 }
 
 function hasVerificationQuestion(text: string): boolean {
   const trimmed = text.trim();
   const last200 = trimmed.slice(-200);
-
   return (
     trimmed.endsWith('?') ||
     last200.includes('?') ||
-    /explain.*back|your turn|try it|what.*think|does that make sense|in your own words|how would you/i.test(last200) ||
-    /can you (tell|explain|describe|summarize|walk)/i.test(last200) ||
-    /what.*(next|happen|wrong|missing)/i.test(last200)
+    /explain.*back|your turn|try it|what.*think|does that make sense|in your own words|how would you/i.test(last200)
   );
 }
 
 function detectCodeDump(text: string): boolean {
   const codeBlocks = (text.match(/```/g) || []).length;
-  const lines = text.split('\n').filter(l => l.trim().length > 0).length;
   return codeBlocks >= 6 && !hasVerificationQuestion(text);
-}
-
-function detectTooManyConcepts(text: string): boolean {
-  // Count distinct concept mentions
-  const found = detectNewConcepts(text);
-  // "brute force" is always allowed in the first response
-  const nonBruteForce = found.filter(c => !c.includes('brute') && !c.includes('naive'));
-  return nonBruteForce.length >= 2;
 }
 
 // ═══════════ EXTENSION ═══════════
@@ -141,18 +127,70 @@ function detectTooManyConcepts(text: string): boolean {
 export default function (pi: ExtensionAPI) {
   // 1. Inject teaching persona
   pi.on("before_agent_start", async (event) => {
-    return { systemPrompt: TEACHING_PROMPT + "\n\n" + event.systemPrompt };
+    let prompt = TEACHING_PROMPT + "\n\n" + event.systemPrompt;
+
+    // Inject current teaching progress
+    const progress = buildProgressNote();
+    if (progress) prompt += "\n\n" + progress;
+
+    return { systemPrompt: prompt };
   });
 
-  // 2. Reset state on new session
+  // 2. THE CORE TOOL: AI signals "I'm done explaining this approach"
+  pi.registerTool({
+    name: "mark_approach_complete",
+    label: "Mark Approach Complete",
+    description:
+      "Call this ONLY when you have FULLY explained one approach (brute force, memoization, etc.) — every step, with visualization. " +
+      "Do NOT call it for a sub-point or a clarification. After calling, ask the student to verify they understood the WHOLE approach.",
+    parameters: Type.Object({
+      approach: Type.String({
+        description: "Name of the approach just fully explained, e.g. 'brute force', 'memoization', 'binary search'",
+      }),
+    }),
+    async execute(_toolCallId, params) {
+      const approach = params.approach.trim().toLowerCase();
+
+      // If there's an unconfirmed approach and this is a DIFFERENT one, the AI is jumping ahead
+      if (state.currentApproach && state.awaitingConfirmation && !state.confirmed && approach !== state.currentApproach) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `BLOCKED: You are trying to mark "${approach}" complete, but "${state.currentApproach}" has not been confirmed by the student yet. Go back to "${state.currentApproach}" and verify understanding first.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      state.currentApproach = approach;
+      state.awaitingConfirmation = true;
+      state.confirmed = false;
+
+      // Record in history if new
+      if (!state.history.find(h => h.name === approach)) {
+        state.history.push({ name: approach, confirmed: false });
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Approach "${approach}" marked complete. Now ask the student to verify their understanding of the WHOLE "${approach}" approach before moving on.`,
+          },
+        ],
+      };
+    },
+  });
+
+  // 3. Reset on session start
   pi.on("session_start", async () => {
-    concepts = [];
-    currentConceptIndex = -1;
-    turnsWithoutQuestion = 0;
+    state = { currentApproach: null, awaitingConfirmation: false, confirmed: false, history: [] };
   });
 
-  // 3. ENFORCEMENT: Check every assistant response
-  pi.on("turn_end", async (event, ctx) => {
+  // 4. ENFORCEMENT: check every assistant response
+  pi.on("turn_end", async (event) => {
     if (event.message.role !== 'assistant') return;
 
     const text = event.message.content
@@ -160,26 +198,7 @@ export default function (pi: ExtensionAPI) {
       .map((b: any) => b.text)
       .join('\n');
 
-    // Detect what concepts the AI is trying to explain
-    const mentionedConcepts = detectNewConcepts(text);
-
-    // Track new concepts
-    for (const name of mentionedConcepts) {
-      if (!concepts.find(c => c.name === name)) {
-        concepts.push({ name, explained: true, confirmed: false });
-      }
-    }
-
-    // === VIOLATION 1: Too many concepts at once ===
-    if (detectTooManyConcepts(text)) {
-      pi.sendUserMessage(
-        "STOP. You mentioned multiple optimization approaches in one response. Pick ONE. Explain it fully. The student hasn't even confirmed they understood the previous concept yet. ONE approach per response.",
-        { deliverAs: "steer" }
-      );
-      return;
-    }
-
-    // === VIOLATION 2: Code dump without engagement ===
+    // === VIOLATION 1: code dump without engagement ===
     if (detectCodeDump(text)) {
       pi.sendUserMessage(
         "Too much code with no engagement. End with a question. Ask the student to trace through the code with a concrete input.",
@@ -188,67 +207,35 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    // === VIOLATION 3: No verification question ===
-    if (!hasVerificationQuestion(text)) {
-      turnsWithoutQuestion++;
-      if (turnsWithoutQuestion >= 2) {
-        pi.sendUserMessage(
-          "You haven't asked a verification question in " + turnsWithoutQuestion + " turns. Ask the student to explain the current approach back in their own words. END with a question.",
-          { deliverAs: "steer" }
-        );
-      }
-    } else {
-      turnsWithoutQuestion = 0;
+    // === VIOLATION 2: no verification question ===
+    // Only enforce when the AI has marked an approach complete (i.e., should be asking for verification)
+    if (state.awaitingConfirmation && !state.confirmed && !hasVerificationQuestion(text)) {
+      pi.sendUserMessage(
+        `You marked "${state.currentApproach}" complete but didn't ask the student to verify. Ask them to explain "${state.currentApproach}" back in their own words. END with a question.`,
+        { deliverAs: "steer" }
+      );
+      return;
     }
   });
 
-  // 4. Track student confirmation
+  // 5. Track student confirmation — ONLY counts when awaitingConfirmation is true
   pi.on("input", async (event) => {
-    if (concepts.length === 0) return { action: 'continue' };
+    if (!state.awaitingConfirmation || state.confirmed) return { action: 'continue' };
 
     const understanding = detectUnderstanding(event.text);
 
     if (understanding === 'confirmed') {
-      // Mark the most recent unconfirmed concept as confirmed
-      for (let i = concepts.length - 1; i >= 0; i--) {
-        if (concepts[i].explained && !concepts[i].confirmed) {
-          concepts[i].confirmed = true;
-          break;
-        }
-      }
+      state.confirmed = true;
+      state.awaitingConfirmation = false;
+
+      // Update history
+      const entry = state.history.find(h => h.name === state.currentApproach);
+      if (entry) entry.confirmed = true;
     }
 
-    if (understanding === 'confused') {
-      // Reset confirmation — needs re-explanation
-      for (let i = concepts.length - 1; i >= 0; i--) {
-        if (concepts[i].explained && !concepts[i].confirmed) {
-          concepts[i].confirmed = false;
-          break;
-        }
-      }
-    }
+    // 'confused' or 'neutral' → leave awaitingConfirmation true, let AI re-explain
 
     return { action: 'continue' };
-  });
-
-  // 5. Before next agent start, inject concept progress
-  pi.on("before_agent_start", async () => {
-    if (concepts.length === 0) return;
-
-    const unconfirmed = concepts.filter(c => !c.confirmed).map(c => c.name);
-    const confirmed = concepts.filter(c => c.confirmed).map(c => c.name);
-
-    let progressNote = '';
-    if (confirmed.length > 0) {
-      progressNote += `\nConcepts student has confirmed understanding: ${confirmed.join(', ')}.`;
-    }
-    if (unconfirmed.length > 0) {
-      progressNote += `\nCURRENT concept student needs to understand: ${unconfirmed[0]}. Do NOT move past this until confirmed.`;
-    }
-
-    if (progressNote) {
-      return { systemPrompt: progressNote };
-    }
   });
 
   // 6. Block solution code writes (allow HTML viz and markdown)
@@ -261,9 +248,30 @@ export default function (pi: ExtensionAPI) {
       if (/\.(py|js|ts|java|cpp|go|rs|swift|kt)$/.test(path)) {
         return {
           block: true,
-          reason: "Teaching mode: don't write solution code unless the student explicitly asked after attempting. Generate an HTML visualization instead."
+          reason: "Teaching mode: don't write solution code unless the student explicitly asked after attempting. Generate an HTML visualization instead.",
         };
       }
     }
   });
+}
+
+function buildProgressNote(): string {
+  const confirmed = state.history.filter(h => h.confirmed).map(h => h.name);
+  const current = state.currentApproach;
+
+  if (current && state.awaitingConfirmation && !state.confirmed) {
+    const lines = [];
+    if (confirmed.length > 0) {
+      lines.push(`Approaches the student has confirmed: ${confirmed.join(', ')}.`);
+    }
+    lines.push(`CURRENT approach: "${current}" — fully explained, awaiting student confirmation.`);
+    lines.push(`Do NOT start the next approach until the student confirms they understand "${current}".`);
+    return lines.join('\n');
+  }
+
+  if (confirmed.length > 0) {
+    return `Approaches the student has confirmed: ${confirmed.join(', ')}.`;
+  }
+
+  return '';
 }
