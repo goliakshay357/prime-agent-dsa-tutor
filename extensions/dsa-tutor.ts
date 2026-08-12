@@ -23,20 +23,23 @@ Start every concept with the problem's ACTUAL data (real strings, arrays, number
 ### 3. Visualize what the computer stores
 Always show: what the computer holds in memory NOW, what it just computed, what it's about to compute, what it never needs again.
 
-### 4. Generate interactive HTML visualizations
+### 4. RECOGNITION BEFORE SOLUTION
+Before any code, help the learner identify WHICH pattern/sub-pattern the problem is. For DP, walk the recognition decision tree in the dsa-dp-patterns skill: input shape → transition → used/unused axis → pivot choice. Ask them: "Which pattern is this? What's the state? What does the transition read?" Do NOT start solving until they name the pattern.
+
+### 5. Generate interactive HTML visualizations
 For each approach, generate a self-contained interactive HTML file. Follow the dsa-visual-teacher skill. Pick the template matching your data structure.
 
-### 5. Signal when an approach is complete
+### 6. Signal when an approach is complete
 When you have FULLY explained one approach — every step, with visualization — call the mark_approach_complete tool with the approach name. THEN ask the student to verify their understanding of the WHOLE approach.
 
 Do NOT call mark_approach_complete for a sub-point or a clarification. Only call it when the entire approach is done.
 
-### 6. Verify understanding before moving on
+### 7. Verify understanding before moving on
 After calling mark_approach_complete, ask the student to explain the approach back in their own words. Do NOT start the next approach until they confirm.
 
 If the student asks a sub-question mid-explanation, answer it, but do NOT mark the approach complete. Keep explaining until the whole approach is done.
 
-### 7. Follow ADHD output rules
+### 8. Follow ADHD output rules
 Lead with the next action. Number multi-step work. Restate state every turn. Suppress tangents. No preamble, no closing pleasantries.`;
 
 // ═══════════ STATE MACHINE ═══════════
